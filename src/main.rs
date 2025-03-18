@@ -1,8 +1,8 @@
-use std::{ffi::CStr, num::NonZeroU16, rc::{Rc, Weak}, sync::RwLock};
+use std::{cell::RefCell, num::NonZeroU16, rc::{Rc, Weak}};
 use raylib::prelude::*;
 
 pub struct Layer<'a> {
-    pub rtex: Weak<RwLock<RenderTexture2D>>,
+    pub rtex: Weak<RefCell<RenderTexture2D>>,
     pub shader: Option<&'a Shader>,
     pub children: Vec<Layer<'a>>,
 }
@@ -10,7 +10,7 @@ pub struct Layer<'a> {
 impl<'a> Layer<'a> {
     pub fn draw_buffer<D: RaylibDraw>(&self, d: &mut D) {
         if let Some(rtex_rc) = self.rtex.upgrade() {
-            let rtex = rtex_rc.read().expect("poison error is unrecoverable");
+            let rtex = rtex_rc.borrow();
             if let Some(shader) = &self.shader {
                 let mut d = d.begin_shader_mode(shader);
                 d.draw_texture_ex(&*rtex, Vector2::zero(), 0.0, 1.0, Color::WHITE);
@@ -25,13 +25,22 @@ impl<'a> Layer<'a> {
             child.update_buffers(d, thread);
         }
         if let Some(rtex_rc) = self.rtex.upgrade() {
-            let mut rtex = rtex_rc.write().expect("poison error is unrecoverable");
-            let mut d = d.begin_texture_mode(thread, &mut *rtex);
-            d.clear_background(Color::BLANK);
-            for child in &self.children {
-                child.draw_buffer(&mut d);
+            let mut rtex = rtex_rc.borrow_mut();
+            {
+                let mut d = d.begin_texture_mode(thread, &mut *rtex);
+                d.clear_background(Color::BLANK);
+                for child in &self.children {
+                    child.draw_buffer(&mut d);
+                }
             }
         }
+    }
+}
+
+fn resize_canvas<D: RaylibTextureModeExt>(d: &mut D, thread: &RaylibThread, rasters: &mut [Rc<RefCell<RenderTexture2D>>]) {
+    for raster_rc in rasters {
+        let mut raster = raster_rc.borrow_mut();
+        let mut d = d.begin_texture_mode(thread, raster);
     }
 }
 
@@ -43,11 +52,13 @@ fn main() {
         .build();
     rl.set_target_fps(60);
     rl.set_window_state(rl.get_window_state().set_window_maximized(true));
+    let mut canvas_w = const { unsafe { NonZeroU16::new_unchecked(64) } };
+    let mut canvas_h = const { unsafe { NonZeroU16::new_unchecked(64) } };
 
     let mut shaders: Vec<Shader> = Vec::new();
-    let mut rasters: Vec<Rc<RwLock<RenderTexture2D>>> = Vec::new();
+    let mut rasters: Vec<Rc<RefCell<RenderTexture2D>>> = Vec::new();
     let mut layer_tree: Vec<Layer> = Vec::new();
-    let mut brush_size: NonZeroU16 = const { unsafe { NonZeroU16::new_unchecked(3) } };
+    let mut brush_size = const { unsafe { NonZeroU16::new_unchecked(3) } };
     let mut camera = Camera2D {
         offset: Vector2::zero(),
         target: Vector2::zero(),
@@ -57,7 +68,6 @@ fn main() {
 
     while !rl.window_should_close() {
         let mouse_screen_pos = rl.get_mouse_position();
-        let mouse_world_pos = rl.get_screen_to_world2D(mouse_screen_pos, camera);
         rl.hide_cursor();
 
         if let Some(key) = rl.get_key_pressed() {
@@ -74,6 +84,12 @@ fn main() {
                 _ => {}
             }
         }
+
+        let scroll = Vector2::from(rl.get_mouse_wheel_move_v());
+        camera.target += scroll;
+        camera.offset += scroll;
+
+        let mouse_world_pos = rl.get_screen_to_world2D(mouse_screen_pos, camera);
 
         {
             let mut d = &mut rl; // `RaylibTextureModeExt` is implemented for `&mut RaylibHandle` but not `RaylibHandle`
@@ -116,7 +132,7 @@ fn main() {
                 }
             }
 
-            d.gui_slider_bar(Rectangle::new(0.0, 0.0, 50.0, 10.0), Some(c"0.25x"), Some(c"4x"), &mut camera.zoom, 0.25, 4.0);
+            d.gui_slider_bar(Rectangle::new(35.0, 0.0, 50.0, 10.0), Some(c"0.25x"), Some(c"4x"), &mut camera.zoom, 0.25, 4.0);
         }
     }
 }
