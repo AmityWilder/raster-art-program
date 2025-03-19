@@ -1,5 +1,109 @@
-use std::{cell::RefCell, num::NonZeroU16, rc::{Rc, Weak}};
+use std::{cell::RefCell, hint::unreachable_unchecked, num::NonZeroU16, rc::{Rc, Weak}};
 use raylib::prelude::*;
+
+#[derive(Clone, Copy)]
+pub enum BlendFactor {
+    Zero                  = ffi::RL_ZERO                     as isize,
+    One                   = ffi::RL_ONE                      as isize,
+    SrcColor              = ffi::RL_SRC_COLOR                as isize,
+    OneMinusSrcColor      = ffi::RL_ONE_MINUS_SRC_COLOR      as isize,
+    SrcAlpha              = ffi::RL_SRC_ALPHA                as isize,
+    OneMinusSrcAlpha      = ffi::RL_ONE_MINUS_SRC_ALPHA      as isize,
+    DstAlpha              = ffi::RL_DST_ALPHA                as isize,
+    OneMinusDstAlpha      = ffi::RL_ONE_MINUS_DST_ALPHA      as isize,
+    DstColor              = ffi::RL_DST_COLOR                as isize,
+    OneMinusDstColor      = ffi::RL_ONE_MINUS_DST_COLOR      as isize,
+    SrcAlphaSaturate      = ffi::RL_SRC_ALPHA_SATURATE       as isize,
+    ConstantColor         = ffi::RL_CONSTANT_COLOR           as isize,
+    OneMinusConstantColor = ffi::RL_ONE_MINUS_CONSTANT_COLOR as isize,
+    ConstantAlpha         = ffi::RL_CONSTANT_ALPHA           as isize,
+    OneMinusConstantAlpha = ffi::RL_ONE_MINUS_CONSTANT_ALPHA as isize,
+}
+
+#[derive(Clone, Copy, Default)]
+pub enum BlendEquation {
+    #[default]
+    FuncAdd             = ffi::RL_FUNC_ADD              as isize,
+    FuncSubtract        = ffi::RL_FUNC_SUBTRACT         as isize,
+    FuncReverseSubtract = ffi::RL_FUNC_REVERSE_SUBTRACT as isize,
+    Min                 = ffi::RL_MIN                   as isize,
+    Max                 = ffi::RL_MAX                   as isize,
+}
+
+#[derive(Clone, Copy)]
+pub enum BlendModeA {
+    Alpha,
+    Additive,
+    Multiplied,
+    AddColors,
+    SubtractColors,
+    AlphaPremultiply,
+    Custom {
+        src_factor: BlendFactor,
+        dst_factor: BlendFactor,
+        equation:   BlendEquation,
+    },
+    CustomSeparate {
+        src_rgb:   BlendFactor,
+        dst_rgb:   BlendFactor,
+        src_alpha: BlendFactor,
+        dst_alpha: BlendFactor,
+        eq_rgb:    BlendEquation,
+        eq_alpha:  BlendEquation,
+    },
+}
+
+impl Default for BlendModeA {
+    fn default() -> Self {
+        Self::Alpha
+    }
+}
+
+pub trait AmyBlendModeExt: RaylibBlendModeExt {
+    fn begin_blend_mode_a(&mut self, blend_mode: BlendModeA) -> RaylibBlendMode<'_, Self> {
+        match blend_mode {
+            BlendModeA::Alpha            => self.begin_blend_mode(BlendMode::BLEND_ALPHA),
+            BlendModeA::Additive         => self.begin_blend_mode(BlendMode::BLEND_ADDITIVE),
+            BlendModeA::Multiplied       => self.begin_blend_mode(BlendMode::BLEND_MULTIPLIED),
+            BlendModeA::AddColors        => self.begin_blend_mode(BlendMode::BLEND_ADD_COLORS),
+            BlendModeA::SubtractColors   => self.begin_blend_mode(BlendMode::BLEND_SUBTRACT_COLORS),
+            BlendModeA::AlphaPremultiply => self.begin_blend_mode(BlendMode::BLEND_ALPHA_PREMULTIPLY),
+            BlendModeA::Custom { src_factor, dst_factor, equation } => {
+                unsafe { ffi::rlSetBlendFactors(src_factor as i32, dst_factor as i32, equation as i32); }
+                self.begin_blend_mode(BlendMode::BLEND_CUSTOM)
+            }
+            BlendModeA::CustomSeparate { src_rgb, dst_rgb, src_alpha, dst_alpha, eq_rgb, eq_alpha } => {
+                unsafe { ffi::rlSetBlendFactorsSeparate(src_rgb as i32, dst_rgb as i32, src_alpha as i32, dst_alpha as i32, eq_rgb as i32, eq_alpha as i32); }
+                self.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE)
+            }
+        }
+    }
+}
+impl<D: RaylibBlendModeExt> AmyBlendModeExt for D {}
+
+pub struct Brush {
+    pub size: NonZeroU16,
+    pub color: Color,
+    pub blend: BlendModeA,
+}
+
+impl Brush {
+    pub fn draw_line<D: RaylibDraw>(&self, d: &mut D, p1: Vector2, p2: Vector2) {
+        let thick = self.size.get() as f32;
+        let radius = thick * 0.5;
+        let snapped_pos_prev = Vector2 {
+            x: ((p1.x - radius).round() + radius),
+            y: ((p1.y - radius).round() + radius),
+        };
+        let snapped_pos = Vector2 {
+            x: ((p2.x - radius).round() + radius),
+            y: ((p2.y - radius).round() + radius),
+        };
+        d.draw_line_ex(snapped_pos_prev, snapped_pos, thick, self.color);
+        d.draw_circle_v(snapped_pos_prev, radius, self.color);
+        d.draw_circle_v(snapped_pos, radius, self.color);
+    }
+}
 
 type Raster = RefCell<RenderTexture2D>;
 type RcRaster = Rc<Raster>;
@@ -130,20 +234,37 @@ fn resize_canvas(
     }
 }
 
-fn brush_line<D: RaylibDraw>(d: &mut D, p1: Vector2, p2: Vector2, brush_size: NonZeroU16, color: Color) {
-    let thick = brush_size.get() as f32;
-    let radius = thick * 0.5;
-    let snapped_pos_prev = Vector2 {
-        x: ((p1.x - radius).round() + radius),
-        y: ((p1.y - radius).round() + radius),
-    };
-    let snapped_pos = Vector2 {
-        x: ((p2.x - radius).round() + radius),
-        y: ((p2.y - radius).round() + radius),
-    };
-    d.draw_line_ex(snapped_pos_prev, snapped_pos, thick, color);
-    d.draw_circle_v(snapped_pos_prev, radius, color);
-    d.draw_circle_v(snapped_pos, radius, color);
+/// **Warning:** Endless
+pub struct ResizeHandleIter<'a> {
+    bounds: &'a Rectangle,
+    x: u8,
+    y: u8,
+}
+
+impl<'a> ResizeHandleIter<'a> {
+    pub fn new(bounds: &'a Rectangle) -> Self {
+        Self { bounds, x: 0, y: 0 }
+    }
+}
+
+impl<'a> Iterator for ResizeHandleIter<'a> {
+    type Item = Vector2;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let v = Vector2 {
+            x: self.bounds.x + self.bounds.width  * (0.5 * self.x as f32),
+            y: self.bounds.y + self.bounds.height * (0.5 * self.y as f32),
+        };
+        match (self.y, self.x) {
+            (0,     0 | 1) => self.x += 1,
+            (0 | 1, 2    ) => self.y += 1,
+            (2,     2 | 1) => self.x -= 1,
+            (2 | 1, 0    ) => self.y -= 1,
+
+            (1, 1) | (3.., _) | (_, 3..) => unreachable!("invalid iterator state"),
+        }
+        Some(v)
+    }
 }
 
 #[allow(clippy::cognitive_complexity)]
@@ -152,10 +273,11 @@ fn main() {
         .size(1280, 720)
         .title("Amity Raster Art")
         .build();
+    rl.set_exit_key(None);
     rl.set_target_fps(60);
     rl.set_window_state(rl.get_window_state().set_window_maximized(true));
-    let mut canvas_w = const { unsafe { NonZeroU16::new_unchecked(64) } };
-    let mut canvas_h = const { unsafe { NonZeroU16::new_unchecked(64) } };
+    let mut canvas_w = const { unsafe { NonZeroU16::new_unchecked(128) } };
+    let mut canvas_h = const { unsafe { NonZeroU16::new_unchecked(128) } };
     let mut canvas_rec = Rectangle {
         x: 0.0,
         y: 0.0,
@@ -168,15 +290,18 @@ fn main() {
     let mut shaders: Vec<Shader> = Vec::new();
     let mut rasters: Vec<RcRaster> = Vec::new();
     let mut layer_tree: Vec<Layer> = Vec::new();
-    let mut brush_size = const { unsafe { NonZeroU16::new_unchecked(3) } };
     let mut camera = Camera2D {
         offset: Vector2::zero(),
         target: Vector2::new(-10.0, -10.0),
         rotation: 0.0,
         zoom: 1.0,
     };
-    let mut brush_color: Color = Color::BLACK;
     let mut brush_target: Option<RcRaster>;
+    let mut brush = Brush {
+        size: const { unsafe { NonZeroU16::new_unchecked(1) } },
+        color: Color::BLACK,
+        blend: BlendModeA::Alpha,
+    };
 
     let raster0 = create_raster(&mut rl, &thread, &mut rasters, canvas_w, canvas_h);
     brush_target = Some(raster0.clone());
@@ -189,19 +314,12 @@ fn main() {
         rl.hide_cursor();
 
         // brush size
-        if let Some(key) = rl.get_key_pressed() {
-            match key {
-                KeyboardKey::KEY_ONE   => brush_size = const { unsafe { NonZeroU16::new_unchecked(1) } },
-                KeyboardKey::KEY_TWO   => brush_size = const { unsafe { NonZeroU16::new_unchecked(2) } },
-                KeyboardKey::KEY_THREE => brush_size = const { unsafe { NonZeroU16::new_unchecked(3) } },
-                KeyboardKey::KEY_FOUR  => brush_size = const { unsafe { NonZeroU16::new_unchecked(4) } },
-                KeyboardKey::KEY_FIVE  => brush_size = const { unsafe { NonZeroU16::new_unchecked(5) } },
-                KeyboardKey::KEY_SIX   => brush_size = const { unsafe { NonZeroU16::new_unchecked(6) } },
-                KeyboardKey::KEY_SEVEN => brush_size = const { unsafe { NonZeroU16::new_unchecked(7) } },
-                KeyboardKey::KEY_EIGHT => brush_size = const { unsafe { NonZeroU16::new_unchecked(8) } },
-                KeyboardKey::KEY_NINE  => brush_size = const { unsafe { NonZeroU16::new_unchecked(9) } },
-                _ => {}
-            }
+        if let Some(new_size) = rl.get_key_pressed()
+            .map(|key| key as i32 - KeyboardKey::KEY_ONE as i32 + 1)
+            .filter(|n| (1..=9).contains(n))
+            .map(|n| NonZeroU16::new(u16::try_from(n).unwrap()).unwrap())
+        {
+            brush.size = new_size;
         }
 
         // zoom/pan
@@ -226,7 +344,7 @@ fn main() {
             if is_zoom_scrolling {
                 let scroll = rl.get_mouse_wheel_move();
                 if scroll > 0.0 {
-                    if camera.zoom < 8.0 {
+                    if camera.zoom < 32.0 {
                         camera.zoom *= 2.0;
                     }
                 } else if scroll < 0.0 {
@@ -246,7 +364,7 @@ fn main() {
                 if d.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
                     let mut brush_target_borrow = brush_target_rc.borrow_mut();
                     let mut d = d.begin_texture_mode(&thread, &mut *brush_target_borrow);
-                    brush_line(&mut d, mouse_world_pos_prev, mouse_world_pos, brush_size, brush_color);
+                    brush.draw_line(&mut d, mouse_world_pos_prev, mouse_world_pos);
                 }
             }
         }
@@ -264,8 +382,10 @@ fn main() {
             let mut d = rl.begin_drawing(&thread);
             d.clear_background(Color::BLACK);
 
+            // world
             {
                 let mut d = d.begin_mode2D(camera);
+                let px_size = camera.zoom.recip();
 
                 d.draw_rectangle_rec(canvas_rec, Color::new(64,64,64,255));
                 // draw artwork
@@ -281,51 +401,26 @@ fn main() {
                     });
                 }
 
-                // // brush preview
-                // {
-                //     let ibrush_size = i32::from(brush_size.get());
-                //     let ioffset = 1 - (brush_size.get() & 1);
-                //     let offset = f32::from(ioffset) * 0.5;
-                //     let ioffset = i32::from(ioffset);
-                //     let ibrush_radius = ibrush_size/2;
-                //     let ibrush_offset_radius = ibrush_radius + ioffset;
-                //     let brush_radius_sqr = (ibrush_radius*ibrush_radius) as f32;
-                //     for y in -ibrush_offset_radius..=ibrush_offset_radius {
-                //         let y = y as f32 + offset;
-                //         for x in -ibrush_offset_radius..=ibrush_offset_radius {
-                //             let x = x as f32 + offset;
-                //             if x*x + y*y <= brush_radius_sqr {
-                //                 d.draw_rectangle_rec(Rectangle {
-                //                     x: mouse_world_pos.x as f32 + x - 0.5,
-                //                     y: mouse_world_pos.y as f32 + y - 0.5,
-                //                     width: 1.0,
-                //                     height: 1.0,
-                //                 }, Color::WHITE);
-                //             }
-                //         }
-                //     }
-                // }
-
-                brush_line(&mut d, mouse_world_pos_prev, mouse_world_pos, brush_size, Color::GRAY);
+                // brush preview
+                brush.draw_line(&mut d, mouse_world_pos_prev, mouse_world_pos);
 
                 // crosshair
                 {
                     const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
-                    unsafe {
-                        ffi::rlSetBlendFactorsSeparate(
-                            ffi::RL_ONE_MINUS_DST_COLOR as i32, // src rgb factor
-                            ffi::RL_ONE_MINUS_SRC_COLOR as i32, // dst rgb factor
-                            ffi::RL_ZERO as i32, // src alpha factor
-                            ffi::RL_ONE as i32, // dst alpha factor
-                            ffi::RL_FUNC_ADD as i32, // rgb eq
-                            ffi::RL_FUNC_ADD as i32, // alpha eq
-                        );
-                    }
-                    let brush_radius = brush_size.get() as f32 * 0.5;
-                    let px_size = camera.zoom.recip();
-                    let mut d = d.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE);
+                    let brush_radius = brush.size.get() as f32 * 0.5;
+                    let mut d = d.begin_blend_mode_a(BlendModeA::CustomSeparate {
+                        src_rgb: BlendFactor::OneMinusDstColor,
+                        dst_rgb: BlendFactor::OneMinusSrcColor,
+                        src_alpha: BlendFactor::Zero,
+                        dst_alpha: BlendFactor::One,
+                        eq_rgb: BlendEquation::FuncAdd,
+                        eq_alpha: BlendEquation::FuncAdd,
+                    });
                     d.draw_ring(mouse_world_pos, brush_radius, brush_radius + px_size, 0.0, 360.0, 20, CROSSHAIR_COLOR);
                 }
+
+                d.draw_rectangle_rec(Rectangle::new(canvas_rec.x + canvas_rec.width + 1.0*px_size, canvas_rec.y + canvas_rec.height + 1.0*px_size, 6.0*px_size, 6.0*px_size), Color::GRAY);
+                d.draw_rectangle_rec(Rectangle::new(canvas_rec.x + canvas_rec.width + 2.0*px_size, canvas_rec.y + canvas_rec.height + 2.0*px_size, 4.0*px_size, 4.0*px_size), Color::LIGHTGRAY);
             }
         }
 
