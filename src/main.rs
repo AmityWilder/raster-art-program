@@ -130,11 +130,27 @@ fn resize_canvas(
     }
 }
 
+fn brush_line<D: RaylibDraw>(d: &mut D, p1: Vector2, p2: Vector2, brush_size: NonZeroU16, color: Color) {
+    let thick = brush_size.get() as f32;
+    let radius = thick * 0.5;
+    let snapped_pos_prev = Vector2 {
+        x: ((p1.x - radius).round() + radius),
+        y: ((p1.y - radius).round() + radius),
+    };
+    let snapped_pos = Vector2 {
+        x: ((p2.x - radius).round() + radius),
+        y: ((p2.y - radius).round() + radius),
+    };
+    d.draw_line_ex(snapped_pos_prev, snapped_pos, thick, color);
+    d.draw_circle_v(snapped_pos_prev, radius, color);
+    d.draw_circle_v(snapped_pos, radius, color);
+}
+
 #[allow(clippy::cognitive_complexity)]
 fn main() {
     let (mut rl, thread) = init()
         .size(1280, 720)
-        .title("Amity Paint")
+        .title("Amity Raster Art")
         .build();
     rl.set_target_fps(60);
     rl.set_window_state(rl.get_window_state().set_window_maximized(true));
@@ -155,7 +171,7 @@ fn main() {
     let mut brush_size = const { unsafe { NonZeroU16::new_unchecked(3) } };
     let mut camera = Camera2D {
         offset: Vector2::zero(),
-        target: Vector2::zero(),
+        target: Vector2::new(-10.0, -10.0),
         rotation: 0.0,
         zoom: 1.0,
     };
@@ -210,11 +226,11 @@ fn main() {
             if is_zoom_scrolling {
                 let scroll = rl.get_mouse_wheel_move();
                 if scroll > 0.0 {
-                    if camera.zoom < 4.0 {
+                    if camera.zoom < 8.0 {
                         camera.zoom *= 2.0;
                     }
                 } else if scroll < 0.0 {
-                    if camera.zoom > 0.25 {
+                    if camera.zoom > 0.125 {
                         camera.zoom /= 2.0;
                     }
                 }
@@ -230,9 +246,7 @@ fn main() {
                 if d.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
                     let mut brush_target_borrow = brush_target_rc.borrow_mut();
                     let mut d = d.begin_texture_mode(&thread, &mut *brush_target_borrow);
-                    let thick = brush_size.get() as f32;
-                    d.draw_line_ex(mouse_world_pos_prev, mouse_world_pos, brush_size.get() as f32, brush_color);
-                    d.draw_circle_v(mouse_world_pos_prev, thick * 0.5, brush_color);
+                    brush_line(&mut d, mouse_world_pos_prev, mouse_world_pos, brush_size, brush_color);
                 }
             }
         }
@@ -267,47 +281,51 @@ fn main() {
                     });
                 }
 
-                // brush preview
-                {
-                    let ibrush_size = i32::from(brush_size.get());
-                    let ioffset = 1 - (brush_size.get() & 1);
-                    let offset = f32::from(ioffset) * 0.5;
-                    let ioffset = i32::from(ioffset);
-                    let ibrush_radius = ibrush_size/2;
-                    let ibrush_offset_radius = ibrush_radius + ioffset;
-                    let brush_radius_sqr = (ibrush_radius*ibrush_radius) as f32;
-                    for y in -ibrush_offset_radius..=ibrush_offset_radius {
-                        let y = y as f32 + offset;
-                        for x in -ibrush_offset_radius..=ibrush_offset_radius {
-                            let x = x as f32 + offset;
-                            if x*x + y*y <= brush_radius_sqr {
-                                d.draw_rectangle_rec(Rectangle {
-                                    x: mouse_world_pos.x as f32 + x - 0.5,
-                                    y: mouse_world_pos.y as f32 + y - 0.5,
-                                    width: 1.0,
-                                    height: 1.0,
-                                }, Color::WHITE);
-                            }
-                        }
-                    }
-                }
-            }
+                // // brush preview
+                // {
+                //     let ibrush_size = i32::from(brush_size.get());
+                //     let ioffset = 1 - (brush_size.get() & 1);
+                //     let offset = f32::from(ioffset) * 0.5;
+                //     let ioffset = i32::from(ioffset);
+                //     let ibrush_radius = ibrush_size/2;
+                //     let ibrush_offset_radius = ibrush_radius + ioffset;
+                //     let brush_radius_sqr = (ibrush_radius*ibrush_radius) as f32;
+                //     for y in -ibrush_offset_radius..=ibrush_offset_radius {
+                //         let y = y as f32 + offset;
+                //         for x in -ibrush_offset_radius..=ibrush_offset_radius {
+                //             let x = x as f32 + offset;
+                //             if x*x + y*y <= brush_radius_sqr {
+                //                 d.draw_rectangle_rec(Rectangle {
+                //                     x: mouse_world_pos.x as f32 + x - 0.5,
+                //                     y: mouse_world_pos.y as f32 + y - 0.5,
+                //                     width: 1.0,
+                //                     height: 1.0,
+                //                 }, Color::WHITE);
+                //             }
+                //         }
+                //     }
+                // }
 
-            {
-                unsafe {
-                    ffi::rlSetBlendFactorsSeparate(
-                        ffi::RL_ONE_MINUS_DST_COLOR as i32, // src rgb factor
-                        ffi::RL_ONE_MINUS_SRC_COLOR as i32, // dst rgb factor
-                        ffi::RL_ZERO as i32, // src alpha factor
-                        ffi::RL_ONE as i32, // dst alpha factor
-                        ffi::RL_FUNC_ADD as i32, // rgb eq
-                        ffi::RL_FUNC_ADD as i32, // alpha eq
-                    );
+                brush_line(&mut d, mouse_world_pos_prev, mouse_world_pos, brush_size, Color::GRAY);
+
+                // crosshair
+                {
+                    const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
+                    unsafe {
+                        ffi::rlSetBlendFactorsSeparate(
+                            ffi::RL_ONE_MINUS_DST_COLOR as i32, // src rgb factor
+                            ffi::RL_ONE_MINUS_SRC_COLOR as i32, // dst rgb factor
+                            ffi::RL_ZERO as i32, // src alpha factor
+                            ffi::RL_ONE as i32, // dst alpha factor
+                            ffi::RL_FUNC_ADD as i32, // rgb eq
+                            ffi::RL_FUNC_ADD as i32, // alpha eq
+                        );
+                    }
+                    let brush_radius = brush_size.get() as f32 * 0.5;
+                    let px_size = camera.zoom.recip();
+                    let mut d = d.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE);
+                    d.draw_ring(mouse_world_pos, brush_radius, brush_radius + px_size, 0.0, 360.0, 20, CROSSHAIR_COLOR);
                 }
-                let mut d = d.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE);
-                const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
-                d.draw_circle_lines(mouse_screen_pos.x as i32, mouse_screen_pos.y as i32, 6.0, CROSSHAIR_COLOR);
-                d.draw_pixel(mouse_screen_pos.x as i32, mouse_screen_pos.y as i32, CROSSHAIR_COLOR);
             }
         }
 
