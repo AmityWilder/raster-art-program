@@ -166,6 +166,8 @@ fn main() {
     brush_target = Some(raster0.clone());
     layer_tree.push(Layer { content: LayerContent::Raster { artwork: Rc::downgrade(raster0) }, shader: None });
 
+    let mut mouse_world_pos_prev = rl.get_mouse_position();
+
     while !rl.window_should_close() {
         let mouse_screen_pos = rl.get_mouse_position();
         rl.hide_cursor();
@@ -225,10 +227,12 @@ fn main() {
         {
             let mut d = &mut rl; // `RaylibTextureModeExt` is implemented for `&mut RaylibHandle` but not `RaylibHandle`
             if let Some(brush_target_rc) = &brush_target {
-                let mut brush_target_borrow = brush_target_rc.borrow_mut();
-                {
+                if d.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
+                    let mut brush_target_borrow = brush_target_rc.borrow_mut();
                     let mut d = d.begin_texture_mode(&thread, &mut *brush_target_borrow);
-                    d.draw_pixel_v(mouse_world_pos, brush_color);
+                    let thick = brush_size.get() as f32;
+                    d.draw_line_ex(mouse_world_pos_prev, mouse_world_pos, brush_size.get() as f32, brush_color);
+                    d.draw_circle_v(mouse_world_pos_prev, thick * 0.5, brush_color);
                 }
             }
         }
@@ -249,7 +253,7 @@ fn main() {
             {
                 let mut d = d.begin_mode2D(camera);
 
-                d.draw_rectangle_rec(canvas_rec, Color::GRAY);
+                d.draw_rectangle_rec(canvas_rec, Color::new(64,64,64,255));
                 // draw artwork
                 for layer in &layer_tree {
                     layer.rtex(|rtex: &RenderTexture2D| {
@@ -288,6 +292,25 @@ fn main() {
                     }
                 }
             }
+
+            {
+                unsafe {
+                    ffi::rlSetBlendFactorsSeparate(
+                        ffi::RL_ONE_MINUS_DST_COLOR as i32, // src rgb factor
+                        ffi::RL_ONE_MINUS_SRC_COLOR as i32, // dst rgb factor
+                        ffi::RL_ZERO as i32, // src alpha factor
+                        ffi::RL_ONE as i32, // dst alpha factor
+                        ffi::RL_FUNC_ADD as i32, // rgb eq
+                        ffi::RL_FUNC_ADD as i32, // alpha eq
+                    );
+                }
+                let mut d = d.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE);
+                const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
+                d.draw_circle_lines(mouse_screen_pos.x as i32, mouse_screen_pos.y as i32, 6.0, CROSSHAIR_COLOR);
+                d.draw_pixel(mouse_screen_pos.x as i32, mouse_screen_pos.y as i32, CROSSHAIR_COLOR);
+            }
         }
+
+        mouse_world_pos_prev = mouse_world_pos;
     }
 }
