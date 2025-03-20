@@ -267,6 +267,52 @@ impl<'a> Iterator for ResizeHandleIter<'a> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum InputChange {
+    Released,
+    Pressed,
+}
+
+pub struct InputEvents {
+    mouse: [Option<InputChange>; 7],
+    key: [Option<InputChange>; 336],
+}
+
+impl InputEvents {
+    pub const fn new() -> Self {
+        Self {
+            mouse: [const { None }; 7],
+            key: [const { None }; 336],
+        }
+    }
+
+    pub fn update_key_event(&mut self, rl: &mut RaylibHandle, key: KeyboardKey) {
+        self.key[key as i32 as usize] = rl.is_key_pressed(key).then_some(InputChange::Pressed)
+            .or_else(|| rl.is_key_released(key).then_some(InputChange::Released));
+    }
+
+    pub fn update_mouse_event(&mut self, rl: &mut RaylibHandle, btn: MouseButton) {
+        self.mouse[btn as i32 as usize] = rl.is_mouse_button_pressed(btn).then_some(InputChange::Pressed)
+            .or_else(|| rl.is_mouse_button_released(btn).then_some(InputChange::Released));
+    }
+
+    pub fn key_event(&self, key: KeyboardKey) -> &Option<InputChange> {
+        &self.key[key as i32 as usize]
+    }
+
+    pub fn mouse_event(&self, btn: MouseButton) -> &Option<InputChange> {
+        &self.mouse[btn as i32 as usize]
+    }
+
+    pub fn consume_key_event(&mut self, key: KeyboardKey) {
+        self.key[key as i32 as usize] = None;
+    }
+
+    pub fn consume_mouse_event(&mut self, btn: MouseButton) {
+        self.mouse[btn as i32 as usize] = None;
+    }
+}
+
 #[allow(clippy::cognitive_complexity)]
 fn main() {
     let (mut rl, thread) = init()
@@ -302,6 +348,7 @@ fn main() {
         color: Color::BLACK,
         blend: BlendModeA::Alpha,
     };
+    let mut input_events = InputEvents::new();
 
     let raster0 = create_raster(&mut rl, &thread, &mut rasters, canvas_w, canvas_h);
     brush_target = Some(raster0.clone());
