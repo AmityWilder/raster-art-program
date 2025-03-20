@@ -1,194 +1,12 @@
-use std::{cell::RefCell, hint::unreachable_unchecked, num::NonZeroU16, rc::{Rc, Weak}};
+use std::num::NonZeroU16;
+use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
+use events::{Input, InputEvents};
+use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
 use raylib::prelude::*;
 
 mod events;
-mod blending;
-
-pub struct Brush {
-    pub size: NonZeroU16,
-    pub color: Color,
-    pub blend: BlendModeA,
-}
-
-impl Brush {
-    pub fn draw_line<D: RaylibDraw>(&self, d: &mut D, p1: Vector2, p2: Vector2) {
-        let thick = self.size.get() as f32;
-        let radius = thick * 0.5;
-        let snapped_pos_prev = Vector2 {
-            x: ((p1.x - radius).round() + radius),
-            y: ((p1.y - radius).round() + radius),
-        };
-        let snapped_pos = Vector2 {
-            x: ((p2.x - radius).round() + radius),
-            y: ((p2.y - radius).round() + radius),
-        };
-        d.draw_line_ex(snapped_pos_prev, snapped_pos, thick, self.color);
-        d.draw_circle_v(snapped_pos_prev, radius, self.color);
-        d.draw_circle_v(snapped_pos, radius, self.color);
-    }
-}
-
-type Raster = RefCell<RenderTexture2D>;
-type RcRaster = Rc<Raster>;
-type WeakRaster = Weak<Raster>;
-
-type Effect = RefCell<Shader>;
-type RcEffect = Rc<Effect>;
-type WeakEffect = Weak<Effect>;
-
-enum LayerContent {
-    Raster {
-        artwork: WeakRaster,
-    },
-    Group {
-        buffer: RenderTexture2D,
-        children: Vec<Layer>,
-    },
-}
-
-struct Layer {
-    content: LayerContent,
-    shader: Option<WeakEffect>,
-}
-
-impl Layer {
-    fn rtex<T, F: FnOnce(&RenderTexture2D) -> T>(&self, f: F) -> Option<T> {
-        match &self.content {
-            LayerContent::Raster { artwork, .. } => {
-                if let Some(rtex_rc) = artwork.upgrade() {
-                    let rtex = rtex_rc.borrow();
-                    Some(f(&*rtex))
-                } else { None }
-            }
-            LayerContent::Group { buffer, .. } => Some(f(buffer)),
-        }
-    }
-
-    fn rtex_mut<T, F: FnOnce(&mut RenderTexture2D) -> T>(&mut self, f: F) -> Option<T> {
-        match &mut self.content {
-            LayerContent::Raster { artwork, .. } => {
-                if let Some(rtex_rc) = artwork.upgrade() {
-                    let mut rtex = rtex_rc.borrow_mut();
-                    Some(f(&mut *rtex))
-                } else { None }
-            }
-            LayerContent::Group { buffer, .. } => Some(f(buffer)),
-        }
-    }
-
-    // this is in its own function for the purpose of recursion
-    fn update_buffers<D: RaylibTextureModeExt>(&mut self, d: &mut D, thread: &RaylibThread, canvas_flipped_rec: &Rectangle, canvas_rec: &Rectangle) {
-        if let LayerContent::Group { buffer, children } = &mut self.content {
-            for child in &mut *children {
-                child.update_buffers(d, thread, canvas_flipped_rec, canvas_rec);
-            }
-
-            {
-                let mut d = d.begin_texture_mode(thread, buffer);
-                d.clear_background(Color::BLANK);
-                for child in &*children {
-                    child.rtex(|rtex: &RenderTexture2D| {
-                        if let Some(shader_rc) = child.shader.as_ref().and_then(|shader| shader.upgrade()) {
-                            let shader_borrow = shader_rc.borrow();
-                            let mut d = d.begin_shader_mode(&*shader_borrow);
-                            d.draw_texture_pro(rtex, canvas_flipped_rec, canvas_rec, Vector2::zero(), 0.0, Color::WHITE);
-                        } else {
-                            d.draw_texture_pro(rtex, canvas_flipped_rec, canvas_rec, Vector2::zero(), 0.0, Color::WHITE);
-                        }
-                    });
-                }
-            }
-        }
-    }
-}
-
-fn create_raster<'a>(
-    mut rl: &mut RaylibHandle,
-    thread: &RaylibThread,
-    rasters: &'a mut Vec<RcRaster>,
-    w: NonZeroU16,
-    h: NonZeroU16,
-) -> &'a RcRaster {
-    let mut rtex = rl.load_render_texture(thread, w.get().into(), h.get().into()).unwrap();
-    {
-        let mut d = (&mut rl).begin_texture_mode(thread, &mut rtex);
-        d.clear_background(Color::BLANK);
-    }
-    let raster = Rc::new(RefCell::new(rtex));
-    rasters.push(raster);
-    let [.., last] = &rasters[..] else { unreachable!("should have at least one element after pushing") };
-    last
-}
-
-fn resize_canvas(
-    mut rl: &mut RaylibHandle,
-    thread: &RaylibThread,
-    rasters: &mut [RcRaster],
-    old_w: NonZeroU16,
-    old_h: NonZeroU16,
-    new_w: NonZeroU16,
-    new_h: NonZeroU16,
-) {
-    if new_w == old_w && new_h == old_h { return; }
-    let old_w = old_w.get();
-    let old_h = old_h.get();
-    let new_w = new_w.get().into();
-    let new_h = new_h.get().into();
-    for raster_rc in rasters {
-        let mut raster_borrow = raster_rc.borrow_mut();
-        let mut new_raster = rl.load_render_texture(thread, new_w, new_h).unwrap();
-        {
-            let mut d = rl.begin_texture_mode(thread, &mut new_raster);
-            let src_rec = Rectangle {
-                x: 0.0,
-                y: 0.0,
-                width: old_w as f32,
-                height: old_h as f32,
-            };
-            let dst_rec = Rectangle {
-                x: 0.0,
-                y: 0.0,
-                width: old_w as f32,
-                height: -(old_h as f32),
-            };
-            d.draw_texture_pro(&*raster_borrow, src_rec, dst_rec, Vector2::zero(), 0.0, Color::WHITE);
-        }
-        *raster_borrow = new_raster;
-    }
-}
-
-/// **Warning:** Endless
-pub struct ResizeHandleIter<'a> {
-    bounds: &'a Rectangle,
-    x: u8,
-    y: u8,
-}
-
-impl<'a> ResizeHandleIter<'a> {
-    pub fn new(bounds: &'a Rectangle) -> Self {
-        Self { bounds, x: 0, y: 0 }
-    }
-}
-
-impl<'a> Iterator for ResizeHandleIter<'a> {
-    type Item = Vector2;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let v = Vector2 {
-            x: self.bounds.x + self.bounds.width  * (0.5 * self.x as f32),
-            y: self.bounds.y + self.bounds.height * (0.5 * self.y as f32),
-        };
-        match (self.y, self.x) {
-            (0,     0 | 1) => self.x += 1,
-            (0 | 1, 2    ) => self.y += 1,
-            (2,     2 | 1) => self.x -= 1,
-            (2 | 1, 0    ) => self.y -= 1,
-
-            (1, 1) | (3.., _) | (_, 3..) => unreachable!("invalid iterator state"),
-        }
-        Some(v)
-    }
-}
+mod layer;
+mod brush;
 
 #[allow(clippy::cognitive_complexity)]
 fn main() {
@@ -199,62 +17,45 @@ fn main() {
     rl.set_exit_key(None);
     rl.set_target_fps(60);
     rl.set_window_state(rl.get_window_state().set_window_maximized(true));
-    let mut canvas_w = const { unsafe { NonZeroU16::new_unchecked(128) } };
-    let mut canvas_h = const { unsafe { NonZeroU16::new_unchecked(128) } };
-    let mut canvas_rec = Rectangle {
-        x: 0.0,
-        y: 0.0,
-        width:  canvas_w.get() as f32,
-        height: canvas_h.get() as f32,
-    };
-    let mut canvas_flipped_rec = canvas_rec;
-    canvas_flipped_rec.height = -canvas_flipped_rec.height;
 
-    let mut shaders: Vec<Shader> = Vec::new();
-    let mut rasters: Vec<RcRaster> = Vec::new();
-    let mut layer_tree: Vec<Layer> = Vec::new();
+    let mut rasters = RasterTable::new(const { unsafe { Canvas::new_unchecked(128, 128) } });
+    let mut effects = EffectTable::new();
+    let mut layer_tree = LayerTree::new();
     let mut camera = Camera2D {
         offset: Vector2::zero(),
         target: Vector2::new(-10.0, -10.0),
         rotation: 0.0,
         zoom: 1.0,
     };
-    let mut brush_target: Option<RcRaster>;
-    let mut brush = Brush {
-        size: const { unsafe { NonZeroU16::new_unchecked(1) } },
-        color: Color::BLACK,
-        blend: BlendModeA::Alpha,
-    };
     let mut input_events = InputEvents::new();
+    let mut brush = Brush::new(BrushPreset::new(const { unsafe { NonZeroU16::new_unchecked(1) } }, Color::BLACK));
 
-    let raster0 = create_raster(&mut rl, &thread, &mut rasters, canvas_w, canvas_h);
-    brush_target = Some(raster0.clone());
-    layer_tree.push(Layer { content: LayerContent::Raster { artwork: Rc::downgrade(raster0) }, shader: None });
+    {
+        let raster0 = rasters.create_raster(&mut rl, &thread);
+        brush.set_target(raster0.clone());
+        layer_tree.push(Layer::new(LayerContent::new_raster(raster0)));
+    }
 
     let mut mouse_world_pos_prev = rl.get_mouse_position();
 
     while !rl.window_should_close() {
-        input_events.update(&rl,
-            [
-                MouseButton::MOUSE_BUTTON_LEFT,
-                MouseButton::MOUSE_BUTTON_RIGHT,
-                MouseButton::MOUSE_BUTTON_MIDDLE,
-            ],
-            [
-                KeyboardKey::KEY_SPACE,
-                KeyboardKey::KEY_ONE,
-                KeyboardKey::KEY_TWO,
-                KeyboardKey::KEY_THREE,
-                KeyboardKey::KEY_FOUR,
-                KeyboardKey::KEY_FIVE,
-                KeyboardKey::KEY_SIX,
-                KeyboardKey::KEY_SEVEN,
-                KeyboardKey::KEY_EIGHT,
-                KeyboardKey::KEY_NINE,
-                KeyboardKey::KEY_LEFT_SHIFT,
-                KeyboardKey::KEY_LEFT_CONTROL,
-            ],
-        );
+        input_events.check(&rl, [
+            Input::from(MouseButton::MOUSE_BUTTON_LEFT),
+            Input::from(MouseButton::MOUSE_BUTTON_RIGHT),
+            Input::from(MouseButton::MOUSE_BUTTON_MIDDLE),
+            Input::from(KeyboardKey::KEY_SPACE),
+            Input::from(KeyboardKey::KEY_ONE),
+            Input::from(KeyboardKey::KEY_TWO),
+            Input::from(KeyboardKey::KEY_THREE),
+            Input::from(KeyboardKey::KEY_FOUR),
+            Input::from(KeyboardKey::KEY_FIVE),
+            Input::from(KeyboardKey::KEY_SIX),
+            Input::from(KeyboardKey::KEY_SEVEN),
+            Input::from(KeyboardKey::KEY_EIGHT),
+            Input::from(KeyboardKey::KEY_NINE),
+            Input::from(KeyboardKey::KEY_LEFT_SHIFT),
+            Input::from(KeyboardKey::KEY_LEFT_CONTROL),
+        ]);
         let mouse_screen_pos = rl.get_mouse_position();
         rl.hide_cursor();
 
@@ -264,7 +65,7 @@ fn main() {
             .filter(|n| (1..=9).contains(n))
             .map(|n| NonZeroU16::new(u16::try_from(n).unwrap()).unwrap())
         {
-            brush.size = new_size;
+            brush.preset.size = new_size;
         }
 
         // zoom/pan
@@ -304,12 +105,9 @@ fn main() {
 
         // edit artwork
         {
-            let mut d = &mut rl; // `RaylibTextureModeExt` is implemented for `&mut RaylibHandle` but not `RaylibHandle`
-            if let Some(brush_target_rc) = &brush_target {
-                if d.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-                    let mut brush_target_borrow = brush_target_rc.borrow_mut();
-                    let mut d = d.begin_texture_mode(&thread, &mut *brush_target_borrow);
-                    brush.draw_line(&mut d, mouse_world_pos_prev, mouse_world_pos);
+            if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
+                if let Some((mut d, preset)) = (&mut &mut rl).begin_brush_target_mode(&thread, &mut brush) {
+                    d.draw_line_brush(preset, mouse_world_pos_prev, mouse_world_pos);
                 }
             }
         }
@@ -317,8 +115,8 @@ fn main() {
         // update layer buffers
         {
             let mut d = &mut rl; // `RaylibTextureModeExt` is implemented for `&mut RaylibHandle` but not `RaylibHandle`
-            for layer in &mut layer_tree {
-                layer.update_buffers(&mut d, &thread, &canvas_flipped_rec, &canvas_rec);
+            for layer in layer_tree.layers_mut() {
+                layer.update_buffers(&mut d, &thread, rasters.canvas());
             }
         }
 
@@ -332,27 +130,20 @@ fn main() {
                 let mut d = d.begin_mode2D(camera);
                 let px_size = camera.zoom.recip();
 
-                d.draw_rectangle_rec(canvas_rec, Color::new(64,64,64,255));
+                d.draw_rectangle_rec(rasters.canvas().rec, Color::new(64,64,64,255));
+
                 // draw artwork
-                for layer in &layer_tree {
-                    layer.rtex(|rtex: &RenderTexture2D| {
-                        if let Some(shader_rc) = layer.shader.as_ref().and_then(|shader| shader.upgrade()) {
-                            let shader = shader_rc.borrow();
-                            let mut d = d.begin_shader_mode(&*shader);
-                            d.draw_texture_pro(rtex, canvas_flipped_rec, canvas_rec, Vector2::zero(), 0.0, Color::WHITE);
-                        } else {
-                            d.draw_texture_pro(rtex, canvas_flipped_rec, canvas_rec, Vector2::zero(), 0.0, Color::WHITE);
-                        }
-                    });
+                for layer in layer_tree.layers() {
+                    layer.draw(&mut d, rasters.canvas());
                 }
 
                 // brush preview
-                brush.draw_line(&mut d, mouse_world_pos_prev, mouse_world_pos);
+                d.draw_line_brush(&brush.preset, mouse_world_pos_prev, mouse_world_pos);
 
                 // crosshair
                 {
                     const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
-                    let brush_radius = brush.size.get() as f32 * 0.5;
+                    let brush_radius = brush.preset.size.get() as f32 * 0.5;
                     let mut d = d.begin_blend_mode_a(BlendModeA::CustomSeparate {
                         src_rgb: BlendFactor::OneMinusDstColor,
                         dst_rgb: BlendFactor::OneMinusSrcColor,
@@ -363,9 +154,6 @@ fn main() {
                     });
                     d.draw_ring(mouse_world_pos, brush_radius, brush_radius + px_size, 0.0, 360.0, 20, CROSSHAIR_COLOR);
                 }
-
-                d.draw_rectangle_rec(Rectangle::new(canvas_rec.x + canvas_rec.width + 1.0*px_size, canvas_rec.y + canvas_rec.height + 1.0*px_size, 6.0*px_size, 6.0*px_size), Color::GRAY);
-                d.draw_rectangle_rec(Rectangle::new(canvas_rec.x + canvas_rec.width + 2.0*px_size, canvas_rec.y + canvas_rec.height + 2.0*px_size, 4.0*px_size, 4.0*px_size), Color::LIGHTGRAY);
             }
         }
 

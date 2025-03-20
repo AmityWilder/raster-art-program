@@ -1,4 +1,7 @@
+use std::num::NonZeroU16;
 use raylib::prelude::*;
+
+use crate::layer::{Raster, RcRaster};
 
 #[derive(Clone, Copy)]
 pub enum BlendFactor {
@@ -79,3 +82,97 @@ pub trait AmyBlendModeExt: RaylibBlendModeExt {
     }
 }
 impl<D: RaylibBlendModeExt> AmyBlendModeExt for D {}
+
+pub struct BrushPreset {
+    pub size: NonZeroU16,
+    pub color: Color,
+    pub blend: BlendModeA,
+}
+
+impl BrushPreset {
+    pub const fn new(size: NonZeroU16, color: Color) -> Self {
+        Self {
+            size,
+            color,
+            blend: BlendModeA::Alpha,
+        }
+    }
+
+    pub const fn with_blend_mode(size: NonZeroU16, color: Color, blend: BlendModeA) -> Self {
+        Self {
+            size,
+            color,
+            blend,
+        }
+    }
+}
+
+pub trait BrushPresetDraw: RaylibDraw {
+    fn draw_line_brush(&mut self, preset: &BrushPreset, p1: Vector2, p2: Vector2) {
+        let thick = preset.size.get() as f32;
+        let radius = thick * 0.5;
+        let snapped_pos_prev = Vector2 {
+            x: ((p1.x - radius).round() + radius),
+            y: ((p1.y - radius).round() + radius),
+        };
+        let snapped_pos = Vector2 {
+            x: ((p2.x - radius).round() + radius),
+            y: ((p2.y - radius).round() + radius),
+        };
+        self.draw_line_ex(snapped_pos_prev, snapped_pos, thick, preset.color);
+        self.draw_circle_v(snapped_pos_prev, radius, preset.color);
+        self.draw_circle_v(snapped_pos, radius, preset.color);
+    }
+}
+impl<T: RaylibDraw> BrushPresetDraw for T {}
+
+pub struct Brush {
+    pub preset: BrushPreset,
+    target: Option<RcRaster>,
+}
+
+impl Brush {
+    pub const fn new(preset: BrushPreset) -> Self {
+        Self {
+            preset,
+            target: None,
+        }
+    }
+
+    pub const fn with_target(preset: BrushPreset, target: RcRaster) -> Self {
+        Self {
+            preset,
+            target: Some(target),
+        }
+    }
+
+    pub fn set_target(&mut self, target: RcRaster) -> Option<RcRaster> {
+        self.target.replace(target)
+    }
+
+    pub fn remove_target(&mut self) -> Option<RcRaster> {
+        self.target.take()
+    }
+}
+
+pub struct BrushTargetMode<'a, 'b, T>(&'a mut T, std::cell::RefMut<'b, RenderTexture2D>);
+
+impl<'a, 'b, T> Drop for BrushTargetMode<'a, 'b, T> {
+    fn drop(&mut self) {
+        unsafe { ffi::EndTextureMode(); }
+    }
+}
+
+pub trait BrushTargetModeExt: RaylibTextureModeExt {
+    #[must_use]
+    fn begin_brush_target_mode<'a, 'b>(&'a mut self, _: &RaylibThread, brush: &'b mut Brush) -> Option<(BrushTargetMode<'a, 'b, Self>, &'b BrushPreset)> {
+        if let Some(target_rc) = &mut brush.target {
+            let target_borrow = target_rc.borrow_mut();
+            unsafe { ffi::BeginTextureMode(**target_borrow); }
+            Some((BrushTargetMode(self, target_borrow), &brush.preset))
+        } else { None }
+    }
+}
+
+impl<T: RaylibTextureModeExt> BrushTargetModeExt for T {}
+impl<'a, 'b, T> RaylibDraw for BrushTargetMode<'a, 'b, T> {}
