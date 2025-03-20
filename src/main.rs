@@ -1,85 +1,8 @@
 use std::{cell::RefCell, hint::unreachable_unchecked, num::NonZeroU16, rc::{Rc, Weak}};
 use raylib::prelude::*;
 
-#[derive(Clone, Copy)]
-pub enum BlendFactor {
-    Zero                  = ffi::RL_ZERO                     as isize,
-    One                   = ffi::RL_ONE                      as isize,
-    SrcColor              = ffi::RL_SRC_COLOR                as isize,
-    OneMinusSrcColor      = ffi::RL_ONE_MINUS_SRC_COLOR      as isize,
-    SrcAlpha              = ffi::RL_SRC_ALPHA                as isize,
-    OneMinusSrcAlpha      = ffi::RL_ONE_MINUS_SRC_ALPHA      as isize,
-    DstAlpha              = ffi::RL_DST_ALPHA                as isize,
-    OneMinusDstAlpha      = ffi::RL_ONE_MINUS_DST_ALPHA      as isize,
-    DstColor              = ffi::RL_DST_COLOR                as isize,
-    OneMinusDstColor      = ffi::RL_ONE_MINUS_DST_COLOR      as isize,
-    SrcAlphaSaturate      = ffi::RL_SRC_ALPHA_SATURATE       as isize,
-    ConstantColor         = ffi::RL_CONSTANT_COLOR           as isize,
-    OneMinusConstantColor = ffi::RL_ONE_MINUS_CONSTANT_COLOR as isize,
-    ConstantAlpha         = ffi::RL_CONSTANT_ALPHA           as isize,
-    OneMinusConstantAlpha = ffi::RL_ONE_MINUS_CONSTANT_ALPHA as isize,
-}
-
-#[derive(Clone, Copy, Default)]
-pub enum BlendEquation {
-    #[default]
-    FuncAdd             = ffi::RL_FUNC_ADD              as isize,
-    FuncSubtract        = ffi::RL_FUNC_SUBTRACT         as isize,
-    FuncReverseSubtract = ffi::RL_FUNC_REVERSE_SUBTRACT as isize,
-    Min                 = ffi::RL_MIN                   as isize,
-    Max                 = ffi::RL_MAX                   as isize,
-}
-
-#[derive(Clone, Copy)]
-pub enum BlendModeA {
-    Alpha,
-    Additive,
-    Multiplied,
-    AddColors,
-    SubtractColors,
-    AlphaPremultiply,
-    Custom {
-        src_factor: BlendFactor,
-        dst_factor: BlendFactor,
-        equation:   BlendEquation,
-    },
-    CustomSeparate {
-        src_rgb:   BlendFactor,
-        dst_rgb:   BlendFactor,
-        src_alpha: BlendFactor,
-        dst_alpha: BlendFactor,
-        eq_rgb:    BlendEquation,
-        eq_alpha:  BlendEquation,
-    },
-}
-
-impl Default for BlendModeA {
-    fn default() -> Self {
-        Self::Alpha
-    }
-}
-
-pub trait AmyBlendModeExt: RaylibBlendModeExt {
-    fn begin_blend_mode_a(&mut self, blend_mode: BlendModeA) -> RaylibBlendMode<'_, Self> {
-        match blend_mode {
-            BlendModeA::Alpha            => self.begin_blend_mode(BlendMode::BLEND_ALPHA),
-            BlendModeA::Additive         => self.begin_blend_mode(BlendMode::BLEND_ADDITIVE),
-            BlendModeA::Multiplied       => self.begin_blend_mode(BlendMode::BLEND_MULTIPLIED),
-            BlendModeA::AddColors        => self.begin_blend_mode(BlendMode::BLEND_ADD_COLORS),
-            BlendModeA::SubtractColors   => self.begin_blend_mode(BlendMode::BLEND_SUBTRACT_COLORS),
-            BlendModeA::AlphaPremultiply => self.begin_blend_mode(BlendMode::BLEND_ALPHA_PREMULTIPLY),
-            BlendModeA::Custom { src_factor, dst_factor, equation } => {
-                unsafe { ffi::rlSetBlendFactors(src_factor as i32, dst_factor as i32, equation as i32); }
-                self.begin_blend_mode(BlendMode::BLEND_CUSTOM)
-            }
-            BlendModeA::CustomSeparate { src_rgb, dst_rgb, src_alpha, dst_alpha, eq_rgb, eq_alpha } => {
-                unsafe { ffi::rlSetBlendFactorsSeparate(src_rgb as i32, dst_rgb as i32, src_alpha as i32, dst_alpha as i32, eq_rgb as i32, eq_alpha as i32); }
-                self.begin_blend_mode(BlendMode::BLEND_CUSTOM_SEPARATE)
-            }
-        }
-    }
-}
-impl<D: RaylibBlendModeExt> AmyBlendModeExt for D {}
+mod events;
+mod blending;
 
 pub struct Brush {
     pub size: NonZeroU16,
@@ -267,52 +190,6 @@ impl<'a> Iterator for ResizeHandleIter<'a> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum InputChange {
-    Released,
-    Pressed,
-}
-
-pub struct InputEvents {
-    mouse: [Option<InputChange>; 7],
-    key: [Option<InputChange>; 336],
-}
-
-impl InputEvents {
-    pub const fn new() -> Self {
-        Self {
-            mouse: [const { None }; 7],
-            key: [const { None }; 336],
-        }
-    }
-
-    pub fn update_key_event(&mut self, rl: &mut RaylibHandle, key: KeyboardKey) {
-        self.key[key as i32 as usize] = rl.is_key_pressed(key).then_some(InputChange::Pressed)
-            .or_else(|| rl.is_key_released(key).then_some(InputChange::Released));
-    }
-
-    pub fn update_mouse_event(&mut self, rl: &mut RaylibHandle, btn: MouseButton) {
-        self.mouse[btn as i32 as usize] = rl.is_mouse_button_pressed(btn).then_some(InputChange::Pressed)
-            .or_else(|| rl.is_mouse_button_released(btn).then_some(InputChange::Released));
-    }
-
-    pub fn key_event(&self, key: KeyboardKey) -> &Option<InputChange> {
-        &self.key[key as i32 as usize]
-    }
-
-    pub fn mouse_event(&self, btn: MouseButton) -> &Option<InputChange> {
-        &self.mouse[btn as i32 as usize]
-    }
-
-    pub fn consume_key_event(&mut self, key: KeyboardKey) {
-        self.key[key as i32 as usize] = None;
-    }
-
-    pub fn consume_mouse_event(&mut self, btn: MouseButton) {
-        self.mouse[btn as i32 as usize] = None;
-    }
-}
-
 #[allow(clippy::cognitive_complexity)]
 fn main() {
     let (mut rl, thread) = init()
@@ -357,6 +234,27 @@ fn main() {
     let mut mouse_world_pos_prev = rl.get_mouse_position();
 
     while !rl.window_should_close() {
+        input_events.update(&rl,
+            [
+                MouseButton::MOUSE_BUTTON_LEFT,
+                MouseButton::MOUSE_BUTTON_RIGHT,
+                MouseButton::MOUSE_BUTTON_MIDDLE,
+            ],
+            [
+                KeyboardKey::KEY_SPACE,
+                KeyboardKey::KEY_ONE,
+                KeyboardKey::KEY_TWO,
+                KeyboardKey::KEY_THREE,
+                KeyboardKey::KEY_FOUR,
+                KeyboardKey::KEY_FIVE,
+                KeyboardKey::KEY_SIX,
+                KeyboardKey::KEY_SEVEN,
+                KeyboardKey::KEY_EIGHT,
+                KeyboardKey::KEY_NINE,
+                KeyboardKey::KEY_LEFT_SHIFT,
+                KeyboardKey::KEY_LEFT_CONTROL,
+            ],
+        );
         let mouse_screen_pos = rl.get_mouse_position();
         rl.hide_cursor();
 
