@@ -29,7 +29,7 @@ impl<T> Event<T> {
     #[inline]
     pub fn take_with_dibs_if<P: FnOnce(&T) -> bool>(&mut self, predicate: P) -> Option<T> {
         if self.event.as_ref().map_or(false, predicate) {
-            Some(self.event.expect("only one source should have dibs at a time"))
+            Some(self.take_with_dibs())
         } else { None }
     }
 
@@ -45,20 +45,20 @@ impl<T> Event<T> {
 }
 
 pub struct MouseEvent {
-    pub position: Vector2,
+    pub position: Point,
     pub left_mouse_press: Event<()>,
-    pub scroll: Event<Vector2>,
+    pub scroll: Event<Point>,
 }
 
 impl Event<MouseEvent> {
     #[inline]
-    pub fn is_some_and_overlapping(&self, region: Rectangle) -> bool {
-        self.event.is_some_and(move |e| region.check_collision_point_rec(e.position))
+    pub fn is_some_and_overlapping(&self, region: Rect) -> bool {
+        self.event.as_ref().is_some_and(move |e| region.contains(e.position))
     }
 
     #[inline]
-    pub fn take_if_overlapping(&mut self, region: Rectangle) -> Option<MouseEvent> {
-        self.take_if(move |e| region.check_collision_point_rec(e.position))
+    pub fn take_if_overlapping(&mut self, region: Rect) -> Option<MouseEvent> {
+        self.take_if(move |e| region.contains(e.position))
     }
 }
 
@@ -70,14 +70,14 @@ pub struct Events {
 }
 
 impl Events {
-    pub fn check(rl: &RaylibHandle) -> Self {
+    pub fn check<IB: InputBackend>(tb: &mut IB) -> Self {
         Self {
             hover: Event::new(Some(MouseEvent {
-                position: rl.get_mouse_position(),
-                left_mouse_press: Event::new(rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT).then_some(())),
-                scroll: Event::new(Some(rl.get_mouse_wheel_move_v().into())),
+                position: tb.mouse_position(),
+                left_mouse_press: Event::new(tb.is_m1_pressed().then_some(())),
+                scroll: Event::new(Some(tb.mouse_wheel_move())),
             })),
-            left_mouse_release: rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT),
+            left_mouse_release: tb.is_m1_released(),
         }
     }
 }

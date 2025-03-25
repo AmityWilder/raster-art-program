@@ -1,20 +1,11 @@
 use crate::*;
 
 #[derive(Clone, Copy)]
-pub struct ButtonStyle {
-    pub disabled_color: Color,
-    pub normal_color: Color,
-    pub hover_color: Color,
-    pub press_color: Color,
-}
-
-impl ButtonStyle {
-    pub const DEFAULT_STYLE: Self = Self {
-        disabled_color: Color::GRAY,
-        normal_color: Color::DODGERBLUE,
-        hover_color: Color::SKYBLUE,
-        press_color: Color::BLUE,
-    };
+pub struct ButtonStyle<DB: DrawBackend> {
+    pub disabled_color: DB::Color,
+    pub normal_color: DB::Color,
+    pub hover_color: DB::Color,
+    pub press_color: DB::Color,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,24 +16,15 @@ pub enum ButtonState {
     Press,
 }
 
-pub struct Button<T = Empty> {
+pub struct Button<DB: DrawBackend, T> {
     pub visibility: Visibility,
     pub content: T,
     state: ButtonState,
-    pub style: ButtonStyle,
+    pub style: ButtonStyle<DB>,
 }
 
-impl<T> Button<T> {
-    pub const fn new(content: T) -> Self {
-        Self {
-            visibility: Visibility::Occlude,
-            content,
-            state: ButtonState::Normal,
-            style: ButtonStyle::DEFAULT_STYLE,
-        }
-    }
-
-    pub const fn with_style(content: T, style: ButtonStyle) -> Self {
+impl<DB: DrawBackend, T> Button<DB, T> {
+    pub const fn new(content: T, style: ButtonStyle<DB>) -> Self {
         Self {
             visibility: Visibility::Occlude,
             content,
@@ -55,7 +37,7 @@ impl<T> Button<T> {
         self.state
     }
 
-    pub const fn color(&self) -> Color {
+    pub const fn color(&self) -> DB::Color {
         match self.state {
             ButtonState::Disabled => self.style.disabled_color,
             ButtonState::Normal => self.style.normal_color,
@@ -65,25 +47,24 @@ impl<T> Button<T> {
     }
 }
 
-impl<T: Node> Node for Button<T> {
+impl<TB, DB: DrawBackend, T: Node<TB, DB>> Node<TB, DB> for Button<DB, T> {
     #[inline]
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         self.content.size_range()
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.dibs_tick(slot, events);
     }
 
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
         if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(rl, thread, slot, events);
+            item.active_tick(tb, slot, events);
         } else {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
         if !matches!(self.state, ButtonState::Disabled) {
             if events.left_mouse_release {
@@ -105,29 +86,29 @@ impl<T: Node> Node for Button<T> {
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(rl, thread, slot, events);
+        item.inactive_tick(tb, slot, events);
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
-        d.draw_rectangle_rec(slot, self.color());
+    fn draw(&self, d: &mut DB, slot: Rect) {
+        d.draw_rect(&slot, self.color());
         let (item, slot) = self.child(slot);
         item.draw(d, slot);
     }
 }
 
-impl<T: Node> ParentNode for Button<T> {
+impl<TB, DB: DrawBackend, T: Node<TB, DB>> ParentNode<TB, DB> for Button<DB, T> {
     type Item = T;
 
     #[inline]
-    fn child(&self, slot: Rectangle) -> (&T, Rectangle) {
+    fn child(&self, slot: Rect) -> (&T, Rect) {
         (&self.content, self.bounds(slot))
     }
 
     #[inline]
-    fn child_mut(&mut self, mut slot: Rectangle) -> (&mut T, Rectangle) {
+    fn child_mut(&mut self, mut slot: Rect) -> (&mut T, Rect) {
         slot = self.bounds(slot);
         (&mut self.content, slot)
     }

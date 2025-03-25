@@ -2,12 +2,12 @@ use crate::*;
 
 pub struct Iter<'a> {
     layout: &'a SplitBoxLayout,
-    slot: Rectangle,
+    slot: Rect,
     counter: u8,
 }
 
 impl<'a> Iter<'a> {
-    fn new(layout: &'a SplitBoxLayout, slot: Rectangle) -> Self {
+    fn new(layout: &'a SplitBoxLayout, slot: Rect) -> Self {
         Self {
             layout,
             slot,
@@ -17,35 +17,35 @@ impl<'a> Iter<'a> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = Rectangle;
+    type Item = Rect;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.counter < 2 {
-            let x;
-            let y;
-            let width;
-            let height;
+            let x_min;
+            let y_min;
+            let x_max;
+            let y_max;
             match self.layout.direction {
                 Direction::Row => {
-                    (y, height) = (self.slot.y, self.slot.height);
+                    (y_min, y_max) = (self.slot.y_min, self.slot.y_max);
                     if self.counter == 0 {
-                        (x, width) = (self.slot.x, self.layout.split_point);
+                        (x_min, x_max) = (self.slot.x_min, self.layout.split_point);
                     } else {
-                        (x, width) = (self.layout.split_point, self.slot.x + self.slot.width);
+                        (x_min, x_max) = (self.layout.split_point, self.slot.x_max);
                     }
                 }
                 Direction::Column => {
-                    (x, width) = (self.slot.x, self.slot.width);
+                    (x_min, x_max) = (self.slot.x_min, self.slot.x_max);
                     if self.counter == 0 {
-                        (y, height) = (self.slot.y, self.layout.split_point);
+                        (y_min, y_max) = (self.slot.y_min, self.layout.split_point);
                     } else {
-                        (y, height) = (self.layout.split_point, self.slot.y + self.slot.height);
+                        (y_min, y_max) = (self.layout.split_point, self.slot.y_max);
                     }
 
                 }
             }
             self.counter += 1;
-            Some(Rectangle { x, y, width, height })
+            Some(Rect { x_min, y_min, x_max, y_max })
         } else { None }
     }
 }
@@ -70,7 +70,7 @@ impl<T> SplitBoxNode<T> {
     }
 }
 
-impl<T: Node> Node for SplitBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for SplitBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min0, w_max0), (h_min0, h_max0)) = self.content[0].size_range();
         let ((w_min1, w_max1), (h_min1, h_max1)) = self.content[1].size_range();
@@ -88,50 +88,50 @@ impl<T: Node> Node for SplitBoxNode<T> {
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
         for (item, slot) in self.children_mut(slot) {
             item.dibs_tick(slot, events);
         }
     }
 
     #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
             if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(rl, thread, slot, events);
+                item.active_tick(tb, slot, events);
             } else {
-                item.inactive_tick(rl, thread, slot, events);
+                item.inactive_tick(tb, slot, events);
             }
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         for (item, slot) in self.children(slot) {
             item.draw(d, slot);
         }
     }
 }
 
-impl<T: Node> CollectionNode for SplitBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for SplitBoxNode<T> {
     type Item = T;
     type Iter<'a> = std::iter::Zip<std::slice::Iter<'a, T>, Iter<'a>> where Self: 'a;
     type IterMut<'a> = std::iter::Zip<std::slice::IterMut<'a, T>, Iter<'a>> where Self: 'a;
 
     #[inline]
-    fn children(&self, slot: Rectangle) -> Self::Iter<'_> {
+    fn children(&self, slot: Rect) -> Self::Iter<'_> {
         self.content.iter().zip(Iter::new(&self.layout, slot))
     }
 
     #[inline]
-    fn children_mut(&mut self, slot: Rectangle) -> Self::IterMut<'_> {
+    fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
         self.content.iter_mut().zip(Iter::new(&self.layout, slot))
     }
 }

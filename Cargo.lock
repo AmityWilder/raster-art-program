@@ -14,9 +14,6 @@ dependencies = [
 [[package]]
 name = "amygui"
 version = "0.1.0"
-dependencies = [
- "raylib",
-]
 
 [[package]]
 name = "bindgen"

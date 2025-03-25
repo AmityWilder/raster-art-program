@@ -2,11 +2,11 @@ use crate::*;
 
 pub struct Iter<'a> {
     layout: &'a StackBoxLayout,
-    slot: Rectangle,
+    slot: Rect,
 }
 
 impl<'a> Iter<'a> {
-    pub const fn new(layout: &'a StackBoxLayout, slot: Rectangle) -> Self {
+    pub const fn new(layout: &'a StackBoxLayout, slot: Rect) -> Self {
         Self {
             layout,
             slot,
@@ -15,7 +15,7 @@ impl<'a> Iter<'a> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = Rectangle;
+    type Item = Rect;
 
     fn next(&mut self) -> Option<Self::Item> {
         _ = self.layout;
@@ -52,7 +52,7 @@ impl<T> StackBoxNode<T> {
     }
 }
 
-impl<T: Node> Node for StackBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for StackBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let total_gap = (self.content.len() - 1) as f32 * self.layout.gap;
         let (width, height) = match self.layout.direction {
@@ -113,50 +113,50 @@ impl<T: Node> Node for StackBoxNode<T> {
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
         for (item, slot) in self.children_mut(slot) {
             item.dibs_tick(slot, events);
         }
     }
 
     #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
             if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(rl, thread, slot, events);
+                item.active_tick(tb, slot, events);
             } else {
-                item.inactive_tick(rl, thread, slot, events);
+                item.inactive_tick(tb, slot, events);
             }
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         for (item, slot) in self.children(slot) {
             item.draw(d, slot);
         }
     }
 }
 
-impl<T: Node> CollectionNode for StackBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for StackBoxNode<T> {
     type Item = T;
     type Iter<'a> = std::iter::Zip<std::slice::Iter<'a, T>, Iter<'a>> where Self: 'a;
     type IterMut<'a> = std::iter::Zip<std::slice::IterMut<'a, T>, Iter<'a>> where Self: 'a;
 
     #[inline]
-    fn children(&self, slot: Rectangle) -> Self::Iter<'_> {
+    fn children(&self, slot: Rect) -> Self::Iter<'_> {
         self.content.iter().zip(Iter::new(&self.layout, slot))
     }
 
     #[inline]
-    fn children_mut(&mut self, slot: Rectangle) -> Self::IterMut<'_> {
+    fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
         self.content.iter_mut().zip(Iter::new(&self.layout, slot))
     }
 }

@@ -82,7 +82,7 @@ macro_rules! padding {
     };
 }
 
-impl<T: Node> Node for PadBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for PadBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min, w_max), (h_min, h_max)) = self.content.size_range();
         let pad_w = self.layout.pad_left + self.layout.pad_right;
@@ -93,55 +93,54 @@ impl<T: Node> Node for PadBoxNode<T> {
         )
     }
 
-    fn bounds(&self, slot: Rectangle) -> Rectangle {
-        Rectangle {
-            x: slot.x + self.layout.pad_left,
-            y: slot.y + self.layout.pad_top,
-            width: slot.width - self.layout.pad_left - self.layout.pad_right,
-            height: slot.height - self.layout.pad_top - self.layout.pad_bottom,
+    fn bounds(&self, slot: Rect) -> Rect {
+        Rect {
+            x_min: slot.x_min + self.layout.pad_left,
+            y_min: slot.y_min + self.layout.pad_top,
+            x_max: slot.x_max - self.layout.pad_right,
+            y_max: slot.y_max - self.layout.pad_bottom,
         }
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.dibs_tick(slot, events);
     }
 
     #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
         if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(rl, thread, slot, events);
+            item.active_tick(tb, slot, events);
         } else {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(rl, thread, slot, events);
+        item.inactive_tick(tb, slot, events);
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         let (item, slot) = self.child(slot);
         item.draw(d, slot);
     }
 }
 
-impl<T: Node> ParentNode for PadBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> ParentNode<TB, DB> for PadBoxNode<T> {
     type Item = T;
 
     #[inline]
-    fn child(&self, slot: Rectangle) -> (&T, Rectangle) {
+    fn child(&self, slot: Rect) -> (&T, Rect) {
         (&self.content, self.bounds(slot))
     }
 
     #[inline]
-    fn child_mut(&mut self, mut slot: Rectangle) -> (&mut T, Rectangle) {
+    fn child_mut(&mut self, mut slot: Rect) -> (&mut T, Rect) {
         slot = self.bounds(slot);
         (&mut self.content, slot)
     }

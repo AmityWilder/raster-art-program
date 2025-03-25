@@ -2,8 +2,10 @@ use crate::*;
 
 #[derive(Clone, Copy)]
 pub struct AreaBoxLayout {
-    pub width:  std::ops::RangeInclusive<f32>,
-    pub height: std::ops::RangeInclusive<f32>,
+    pub min_width: f32,
+    pub max_width: f32,
+    pub min_height: f32,
+    pub max_height: f32,
 }
 
 pub struct AreaBoxNode<T> {
@@ -11,11 +13,11 @@ pub struct AreaBoxNode<T> {
     content: T,
 }
 
-impl<T: Node> Node for AreaBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for AreaBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min, w_max), (h_min, h_max)) = self.content.size_range();
-        let (min_width, max_width) = (*self.layout.width.start(), *self.layout.width.end());
-        let (min_height, max_height) = (*self.layout.height.start(), *self.layout.height.end());
+        let (min_width, max_width) = (self.layout.min_width, self.layout.max_width);
+        let (min_height, max_height) = (self.layout.min_height, self.layout.max_height);
         let w_min = w_min.clamp(min_width, max_width);
         let h_min = h_min.clamp(min_height, max_height);
         let w_max = w_max.map_or(max_width, |w| w.clamp(min_width, max_width));
@@ -24,54 +26,45 @@ impl<T: Node> Node for AreaBoxNode<T> {
     }
 
     #[inline]
-    fn bounds(&self, slot: Rectangle) -> Rectangle {
-        let Rectangle { x, y, width, height } = slot;
-        // note: if min is larger than slot, the slot is being calculated wrong.
-        let width = width.clamp(*self.layout.width.start(), *self.layout.width.end());
-        let height = height.clamp(*self.layout.height.start(), *self.layout.height.end());
-        Rectangle { x, y, width, height }
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.dibs_tick(slot, events);
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
-    }
-
-    #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
         if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(rl, thread, slot, events);
+            item.active_tick(tb, slot, events);
         } else {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(rl, thread, slot, events);
+        item.inactive_tick(tb, slot, events);
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         let (item, slot) = self.child(slot);
         item.draw(d, slot);
     }
 }
 
-impl<T: Node> ParentNode for AreaBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> ParentNode<TB, DB> for AreaBoxNode<T> {
     type Item = T;
 
     #[inline]
-    fn child(&self, slot: Rectangle) -> (&Self::Item, Rectangle) {
+    fn child(&self, slot: Rect) -> (&Self::Item, Rect) {
         (&self.content, self.bounds(slot))
     }
 
     #[inline]
-    fn child_mut(&mut self, slot: Rectangle) -> (&mut Self::Item, Rectangle) {
-        (&mut self.content, self.bounds(slot))
+    fn child_mut(&mut self, mut slot: Rect) -> (&mut Self::Item, Rect) {
+        slot = self.bounds(slot);
+        (&mut self.content, slot)
     }
 }

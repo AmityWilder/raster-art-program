@@ -1,7 +1,7 @@
 #![allow(unused)] // at least until everything is in a somewhat-complete state
 
 use std::num::{NonZeroU16, NonZeroU32};
-use amygui::{button::{Button, ButtonState, ButtonStyle}, events::Events, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, Empty, Node, ParentNode, Visibility};
+use amygui::{button::{Button, ButtonState, ButtonStyle}, events::Events, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, DrawBackend, Empty, InputBackend, Node, ParentNode, Point, Rect, TickBackend, Visibility};
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
 use raylib::prelude::*;
@@ -10,6 +10,56 @@ mod raster;
 mod effect;
 mod layer;
 mod brush;
+
+pub struct RaylibInputBackend<'a>(pub &RaylibHandle);
+
+impl<'a> InputBackend for RaylibInputBackend<'a> {
+    #[inline]
+    fn mouse_position(&mut self) -> Point {
+        self.0.get_mouse_position()
+    }
+
+    #[inline]
+    fn is_m1_pressed(&mut self) -> bool {
+        self.0.is_mouse_button_pressed(MouseButton::LEFT_MOUSE_BUTTON)
+    }
+
+    #[inline]
+    fn is_m1_released(&mut self) -> bool {
+        self.0.is_mouse_button_released(MouseButton::LEFT_MOUSE_BUTTON)
+    }
+
+    #[inline]
+    fn mouse_wheel_move(&mut self) -> Point {
+        let ffi::Vector2 { x, y } = self.0.get_mouse_wheel_move_v();
+        Point { x, y }
+    }
+}
+
+pub struct RaylibTickBackend<'a>(&'a mut RaylibHandle, &'a RaylibThread);
+
+impl<'a> TickBackend for RaylibTickBackend<'a> {}
+
+pub struct RaylibDrawBackend<'a>(&'a mut RaylibDrawHandle);
+
+impl<'a> DrawBackend for RaylibDrawBackend<'a> {
+    type Color = Color;
+
+    #[inline]
+    fn draw_rect(&mut self, rect: &Rect, color: Self::Color) {
+        self.0.draw_rectangle_rec(Rectangle {
+            x: rect.x_min,
+            y: rect.y_min,
+            width: rect.width(),
+            height: rect.height(),
+        }, color);
+    }
+
+    #[inline]
+    fn draw_text(&mut self, text: &str, top_left: Point, font_size: f32, color: Self::Color) {
+        self.0.draw_text(text, top_left.x as i32, top_left.y as i32, font_size as i32, color);
+    }
+}
 
 #[allow(clippy::cognitive_complexity)]
 fn main() {
@@ -41,25 +91,31 @@ fn main() {
 
     let mut mouse_world_pos_prev = None;
 
+    const STYLE: ButtonStyle = ButtonStyle {
+        disabled_color: Color::GRAY,
+        normal_color: Color::DODGERBLUE,
+        hover_color: Color::SKYBLUE,
+        press_color: Color::BLUE,
+    };
     let mut tool_panel = padding!(5.0, UniformGridNode::from_iter(
         rvec2(24.0, 24.0),  // item size
         rvec2(3.0, 3.0),    // gap
         const { unsafe { NonZeroU32::new_unchecked(2) } }, // columns
         [
-            Button::new(Empty),
-            Button::new(Empty),
+            Button::new(Empty, STYLE),
+            Button::new(Empty, STYLE),
 
-            Button::new(Empty),
-            Button::new(Empty),
+            Button::new(Empty, STYLE),
+            Button::new(Empty, STYLE),
 
-            Button::new(Empty),
-            Button::new(Empty),
+            Button::new(Empty, STYLE),
+            Button::new(Empty, STYLE),
 
-            Button::new(Empty),
-            Button::new(Empty),
+            Button::new(Empty, STYLE),
+            Button::new(Empty, STYLE),
 
-            Button::new(Empty),
-            Button::new(Empty),
+            Button::new(Empty, STYLE),
+            Button::new(Empty, STYLE),
         ],
     ));
 
@@ -75,7 +131,7 @@ fn main() {
             width: rl.get_screen_width() as f32,
             height: rl.get_screen_height() as f32,
         };
-        let mut ui_events = Events::check(&rl);
+        let mut ui_events = Events::check(&mut RaylibInputBackend(&rl));
 
         // UI must occur first because it appears in front and would consume the events
         tool_panel.tick(&mut rl, &thread, window_rec, &mut ui_events);

@@ -4,42 +4,44 @@ use crate::*;
 pub struct Iter<'a> {
     layout: &'a UniformGridLayout,
     index: u32,
-    src_xy: Vector2,
+    src_xy: Point,
 }
 
 impl<'a> Iter<'a> {
-    pub const fn new(layout: &'a UniformGridLayout, slot: Rectangle) -> Self {
+    pub const fn new(layout: &'a UniformGridLayout, slot: Rect) -> Self {
         Self {
             layout,
             index: 0,
-            src_xy: Vector2 { x: slot.x, y: slot.y },
+            src_xy: slot.min_point(),
         }
     }
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = Rectangle;
+    type Item = Rect;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let Vector2 { x: width, y: height } = self.layout.item_size;
+        let Point { x: width, y: height } = self.layout.item_size;
         let index = self.index;
         self.index += 1;
         let (row, col) = (
             index / self.layout.num_columns,
             index % self.layout.num_columns,
         );
-        Some(Rectangle {
-            x: self.src_xy.x + col as f32 * (width + self.layout.column_gap),
-            y: self.src_xy.y + row as f32 * (height + self.layout.row_gap),
-            width,
-            height,
+        let x_min = self.src_xy.x + col as f32 * (width + self.layout.column_gap);
+        let y_min = self.src_xy.y + row as f32 * (height + self.layout.row_gap);
+        Some(Rect {
+            x_min,
+            y_min,
+            x_max: x_min + width,
+            y_max: y_min + height,
         })
     }
 }
 
 #[derive(Clone, Copy)]
 pub struct UniformGridLayout {
-    pub item_size: Vector2,
+    pub item_size: Point,
     pub row_gap: f32,
     pub column_gap: f32,
     pub num_columns: NonZeroU32,
@@ -51,22 +53,22 @@ pub struct UniformGridNode<T> {
 }
 
 impl<T> UniformGridNode<T> {
-    pub const fn new(item_size: Vector2, gap: Vector2, num_columns: NonZeroU32) -> Self {
+    pub const fn new(item_size: Point, gap: Point, num_columns: NonZeroU32) -> Self {
         Self::with_content(item_size, gap, num_columns, Vec::new())
     }
 
-    pub const fn with_content(item_size: Vector2, gap: Vector2, num_columns: NonZeroU32, content: Vec<T>) -> Self {
+    pub const fn with_content(item_size: Point, gap: Point, num_columns: NonZeroU32, content: Vec<T>) -> Self {
         Self {
             layout: UniformGridLayout { item_size, row_gap: gap.y, column_gap: gap.x, num_columns },
             content,
         }
     }
 
-    pub fn from_iter(item_size: Vector2, gap: Vector2, num_columns: NonZeroU32, content: impl IntoIterator<Item = T>) -> Self {
+    pub fn from_iter(item_size: Point, gap: Point, num_columns: NonZeroU32, content: impl IntoIterator<Item = T>) -> Self {
         Self::with_content(item_size, gap, num_columns, Vec::from_iter(content))
     }
 
-    pub fn position(&self, relative_point: Vector2) -> Option<usize> {
+    pub fn position(&self, relative_point: Point) -> Option<usize> {
         if relative_point.x >= 0.0 && relative_point.y >= 0.0 {
             let slot_width = self.layout.item_size.x + self.layout.column_gap;
             let slot_height = self.layout.item_size.y + self.layout.row_gap;
@@ -89,7 +91,7 @@ impl<T> UniformGridNode<T> {
     }
 }
 
-impl<T: Node> Node for UniformGridNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for UniformGridNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let (num_rows, num_cols) = (
             self.content.len() as u32 / self.layout.num_columns,
@@ -103,50 +105,50 @@ impl<T: Node> Node for UniformGridNode<T> {
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
         for (item, slot) in self.children_mut(slot) {
             item.dibs_tick(slot, events);
         }
     }
 
     #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
             if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(rl, thread, slot, events);
+                item.active_tick(tb, slot, events);
             } else {
-                item.inactive_tick(rl, thread, slot, events);
+                item.inactive_tick(tb, slot, events);
             }
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         for (item, slot) in self.children(slot) {
             item.draw(d, slot);
         }
     }
 }
 
-impl<T: Node> CollectionNode for UniformGridNode<T> {
+impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for UniformGridNode<T> {
     type Item = T;
     type Iter<'a> = std::iter::Zip<std::slice::Iter<'a, T>, Iter<'a>> where Self: 'a;
     type IterMut<'a> = std::iter::Zip<std::slice::IterMut<'a, T>, Iter<'a>> where Self: 'a;
 
     #[inline]
-    fn children(&self, slot: Rectangle) -> Self::Iter<'_> {
+    fn children(&self, slot: Rect) -> Self::Iter<'_> {
         self.content.iter().zip(Iter::new(&self.layout, slot))
     }
 
     #[inline]
-    fn children_mut(&mut self, slot: Rectangle) -> Self::IterMut<'_> {
+    fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
         self.content.iter_mut().zip(Iter::new(&self.layout, slot))
     }
 }

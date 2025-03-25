@@ -31,7 +31,7 @@ impl<T> AlignBoxNode<T> {
     }
 }
 
-impl<T: Node> Node for AlignBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for AlignBoxNode<T> {
     #[inline]
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min, w_max), (h_min, h_max)) = self.content.size_range();
@@ -41,82 +41,81 @@ impl<T: Node> Node for AlignBoxNode<T> {
         )
     }
 
-    fn bounds(&self, slot: Rectangle) -> Rectangle {
-        let (x, y, width, height);
+    fn bounds(&self, slot: Rect) -> Rect {
+        let (x_min, y_min, x_max, y_max);
         {
-            let ((_w_min, w_max), (_h_min, h_max)) = self.content.size_range();
+            let ((w_min, w_max), (h_min, h_max)) = self.content.size_range();
 
+            let width = slot.width();
+            let height = slot.height();
             match self.layout.horizontal {
-                Align::Stretch => (x, width) = (slot.x, slot.width),
+                Align::Stretch => (x_min, x_max) = (slot.x_min, slot.x_max),
                 Align::Start | Align::Center | Align::End => {
-                    let coef = match self.layout.horizontal {
+                    let t = match self.layout.horizontal {
                         Align::Start  => 0.0,
                         Align::Center => 0.5,
                         Align::End    => 1.0,
                         _ => unreachable!(),
                     };
-                    width = w_max.unwrap_or(slot.width);
-                    x = slot.x + coef * (slot.width - width);
+                    todo!()
                 }
             }
 
             match self.layout.vertical {
-                Align::Stretch => (y, height) = (slot.y, slot.height),
+                Align::Stretch => (y_min, y_max) = (slot.y_min, slot.y_max),
                 Align::Start | Align::Center | Align::End => {
-                    let coef = match self.layout.vertical {
+                    let t = match self.layout.vertical {
                         Align::Start  => 0.0,
                         Align::Center => 0.5,
                         Align::End    => 1.0,
                         _ => unreachable!(),
                     };
-                    height = h_max.unwrap_or(slot.height);
-                    y = slot.y + coef * (slot.height - height);
+                    todo!()
                 }
             }
         }
-        Rectangle { x, y, width, height }
+        Rect { x_min, y_min, x_max, y_max }
     }
 
     #[inline]
-    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
+    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.dibs_tick(slot, events);
     }
 
     #[inline]
-    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
         if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(rl, thread, slot, events);
+            item.active_tick(tb, slot, events);
         } else {
-            item.inactive_tick(rl, thread, slot, events);
+            item.inactive_tick(tb, slot, events);
         }
     }
 
     #[inline]
-    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
         let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(rl, thread, slot, events);
+        item.inactive_tick(tb, slot, events);
     }
 
     #[inline]
-    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
         let (item, slot) = self.child(slot);
         item.draw(d, slot);
     }
 }
 
-impl<T: Node> ParentNode for AlignBoxNode<T> {
+impl<TB, DB, T: Node<TB, DB>> ParentNode<TB, DB> for AlignBoxNode<T> {
     type Item = T;
 
     #[inline]
-    fn child(&self, slot: Rectangle) -> (&T, Rectangle) {
+    fn child(&self, slot: Rect) -> (&T, Rect) {
         (&self.content, self.bounds(slot))
     }
 
     #[inline]
-    fn child_mut(&mut self, mut slot: Rectangle) -> (&mut T, Rectangle) {
+    fn child_mut(&mut self, mut slot: Rect) -> (&mut T, Rect) {
         slot = self.bounds(slot);
         (&mut self.content, slot)
     }
