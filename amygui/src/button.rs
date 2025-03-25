@@ -77,14 +77,13 @@ impl<T: Node> Node for Button<T> {
             if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
                 self.state = ButtonState::Normal;
             }
-            if slot.check_collision_point_rec(rl.get_mouse_position()) {
+            if events.hover.is_some_and(|mouse_pos| slot.check_collision_point_rec(mouse_pos)) {
+                events.hover = None;
                 if matches!(self.state, ButtonState::Normal) {
                     self.state = ButtonState::Hover;
                 }
             } else {
-                if matches!(self.state, ButtonState::Hover) {
-                    self.state = ButtonState::Normal;
-                }
+                self.state = ButtonState::Normal;
             }
             if matches!(self.state, ButtonState::Hover) {
                 if events.left_mouse_press.is_some() {
@@ -96,7 +95,7 @@ impl<T: Node> Node for Button<T> {
     }
 
     #[inline]
-    fn draw(&self, d: &mut impl RaylibDraw, slot: Rectangle) {
+    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
         d.draw_rectangle_rec(slot, self.color());
         let (item, slot) = self.child(slot);
         item.draw(d, slot);

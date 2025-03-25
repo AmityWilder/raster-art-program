@@ -84,7 +84,7 @@ impl<T: Node> Node for AlignBoxNode<T> {
     }
 
     #[inline]
-    fn draw(&self, d: &mut impl RaylibDraw, slot: Rectangle) {
+    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
         let (item, slot) = self.child(slot);
         item.draw(d, slot);
     }

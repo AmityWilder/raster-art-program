@@ -1,7 +1,7 @@
 #![allow(unused)] // at least until everything is in a somewhat-complete state
 
-use std::num::NonZeroU16;
-use amygui::{button::{Button, ButtonState, ButtonStyle}, padding, size_box::{SizeBoxLayout, SizeBoxNode}, CollectionNode, Events, Fill, Node, ParentNode, Visibility};
+use std::num::{NonZeroU16, NonZeroU32};
+use amygui::{button::{Button, ButtonState, ButtonStyle}, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, Events, Fill, Node, ParentNode, Visibility};
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use events::{Input, InputEvents};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
@@ -43,35 +43,32 @@ fn main() {
 
     let mut mouse_world_pos_prev = rl.get_mouse_position();
 
-    let mut ui_test_box = SizeBoxNode {
-        layout: SizeBoxLayout {
-            width: 50.0,
-            height: 50.0,
-        },
-        content: Button::new(padding!(
-            20.0,
-            Button::new(Fill),
-        )),
-    };
+    let mut ui_test_box = padding!(5.0, UniformGridNode::from_iter(
+        rvec2(50.0, 45.0),
+        rvec2(2.0, 3.0),
+        const { unsafe { NonZeroU32::new_unchecked(4) } },
+        [
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+
+            Button::new(padding!(8.0, Button::new(Fill))),
+            Button::new(padding!(8.0, Button::new(Fill))),
+            Button::new(padding!(8.0, Button::new(Fill))),
+            Button::new(padding!(8.0, Button::new(Fill))),
+
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+
+            Button::new(padding!(5.0, Button::new(Fill))),
+            Button::new(padding!(5.0, Button::new(Fill))),
+        ],
+    ));
 
     while !rl.window_should_close() {
-        input_events.check(&rl, [
-            Input::from(MouseButton::MOUSE_BUTTON_LEFT),
-            Input::from(MouseButton::MOUSE_BUTTON_RIGHT),
-            Input::from(MouseButton::MOUSE_BUTTON_MIDDLE),
-            Input::from(KeyboardKey::KEY_SPACE),
-            Input::from(KeyboardKey::KEY_ONE),
-            Input::from(KeyboardKey::KEY_TWO),
-            Input::from(KeyboardKey::KEY_THREE),
-            Input::from(KeyboardKey::KEY_FOUR),
-            Input::from(KeyboardKey::KEY_FIVE),
-            Input::from(KeyboardKey::KEY_SIX),
-            Input::from(KeyboardKey::KEY_SEVEN),
-            Input::from(KeyboardKey::KEY_EIGHT),
-            Input::from(KeyboardKey::KEY_NINE),
-            Input::from(KeyboardKey::KEY_LEFT_SHIFT),
-            Input::from(KeyboardKey::KEY_LEFT_CONTROL),
-        ]);
         let mouse_screen_pos = rl.get_mouse_position();
         // rl.hide_cursor();
 

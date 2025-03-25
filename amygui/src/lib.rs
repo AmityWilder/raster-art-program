@@ -33,6 +33,7 @@ pub enum Direction {
 }
 
 pub struct Events {
+    pub hover: Option<Vector2>,
     pub left_mouse_press: Option<()>,
     pub scroll: Option<Vector2>,
 }
@@ -40,6 +41,7 @@ pub struct Events {
 impl Events {
     pub fn check(rl: &RaylibHandle) -> Self {
         Self {
+            hover: Some(rl.get_mouse_position()),
             left_mouse_press: rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT).then_some(()),
             scroll: Some(rl.get_mouse_wheel_move_v().into()),
         }
@@ -57,7 +59,7 @@ pub trait Node {
     }
 
     fn tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events);
-    fn draw(&self, d: &mut impl RaylibDraw, slot: Rectangle);
+    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle);
 }
 
 pub trait ParentNode: Node {
@@ -104,5 +106,22 @@ impl Node for Fill {
     fn tick(&mut self, _rl: &mut RaylibHandle, _thread: &RaylibThread, _slot: Rectangle, _events: &mut Events) {}
 
     #[inline(always)]
-    fn draw(&self, _d: &mut impl RaylibDraw, _slot: Rectangle) {}
+    fn draw(&self, _d: &mut RaylibDrawHandle, _slot: Rectangle) {}
+}
+
+impl Node for Box<dyn Node> {
+    #[inline]
+    fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
+        self.as_ref().size_range()
+    }
+
+    #[inline]
+    fn tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+        self.as_mut().tick(rl, thread, slot, events);
+    }
+
+    #[inline]
+    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
+        self.as_ref().draw(d, slot);
+    }
 }

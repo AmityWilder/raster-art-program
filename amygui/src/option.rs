@@ -17,7 +17,7 @@ impl<T: Node> Node for Option<T> {
     }
 
     #[inline]
-    fn draw(&self, d: &mut impl RaylibDraw, slot: Rectangle) {
+    fn draw(&self, d: &mut RaylibDrawHandle, slot: Rectangle) {
         for (item, slot) in self.children(slot) {
             item.draw(d, slot);
         }
