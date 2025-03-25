@@ -122,6 +122,7 @@ impl Layer {
     }
 }
 
+/// Shape and position of the artwork canvas.
 #[derive(Clone, Copy)]
 pub struct Canvas {
     pub w: NonZeroU16,
@@ -169,10 +170,12 @@ impl RasterTable {
         }
     }
 
+    #[inline]
     pub const fn canvas(&self) -> &Canvas {
         &self.canvas
     }
 
+    #[inline]
     pub const fn canvas_mut(&mut self) -> &mut Canvas {
         &mut self.canvas
     }
@@ -241,14 +244,17 @@ impl LayerTree {
         }
     }
 
+    #[inline]
     pub fn push(&mut self, layer: Layer) {
         self.layers.push(layer);
     }
 
+    #[inline]
     pub fn layers(&self) -> impl IntoIterator<Item = &Layer> {
         &self.layers
     }
 
+    #[inline]
     pub fn layers_mut(&mut self) -> impl IntoIterator<Item = &mut Layer> {
         &mut self.layers
     }

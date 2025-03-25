@@ -8,4 +8,4 @@ edition = "2024"
 
 [dependencies]
 amygui = { path = "amygui" }
-raylib = "5.0.2"
+raylib = "5.5.0"

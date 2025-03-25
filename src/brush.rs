@@ -145,10 +145,12 @@ impl Brush {
         }
     }
 
+    #[inline]
     pub fn set_target(&mut self, target: RcRaster) -> Option<RcRaster> {
         self.target.replace(target)
     }
 
+    #[inline]
     pub fn remove_target(&mut self) -> Option<RcRaster> {
         self.target.take()
     }
@@ -164,9 +166,12 @@ impl<'a, 'b, T> Drop for BrushTargetMode<'a, 'b, T> {
 
 pub trait BrushTargetModeExt: RaylibTextureModeExt {
     #[must_use]
-    fn begin_brush_target_mode<'a, 'b>(&'a mut self, _: &RaylibThread, brush: &'b mut Brush) -> Option<(BrushTargetMode<'a, 'b, Self>, &'b BrushPreset)> {
+    fn begin_brush_target_mode<'a, 'b>(&'a mut self, thread: &RaylibThread, brush: &'b mut Brush) -> Option<(BrushTargetMode<'a, 'b, Self>, &'b BrushPreset)> {
         if let Some(target_rc) = &mut brush.target {
             let target_borrow = target_rc.borrow_mut();
+            // ends in [`BrushTargetMode::drop`]
+            // uses ffi because the texture can't be passed as a mutable reference, it is stored in an Rc
+            // the deref is local and the mutable reference would be dropped when this function closes
             unsafe { ffi::BeginTextureMode(**target_borrow); }
             Some((BrushTargetMode(self, target_borrow), &brush.preset))
         } else { None }

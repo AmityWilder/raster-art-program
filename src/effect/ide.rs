@@ -227,7 +227,7 @@ struct Arg {
 }
 
 struct FuncDef {
-
+    // todo
 }
 
 struct Func {
@@ -238,15 +238,22 @@ struct Func {
 }
 
 #[derive(Clone, Copy)]
+#[non_exhaustive]
 enum GlVersion {
-    V330,
+    Gl21,
+    Gl33,
+    GlEs20,
+    GlEs30,
 }
 
 impl GlVersion {
     #[inline]
     const fn as_bytes(self) -> &'static [u8] {
         match self {
-            GlVersion::V330 => b"330",
+            GlVersion::Gl21 => b"210",
+            GlVersion::Gl33 => b"330",
+            GlVersion::GlEs20 => b"200 es",
+            GlVersion::GlEs30 => b"300 es",
         }
     }
 }
@@ -345,15 +352,18 @@ impl EffectCode {
 mod effect_code_tests {
     use super::*;
 
+    const SEPARATOR: &str = "------------------------------------------------------";
+
     #[test]
     fn test0() {
         let code = EffectCode {
-            version: GlVersion::V330,
+            version: GlVersion::Gl33,
             idents: vec![
                 Box::new(*b"apple"),
                 Box::new(*b"orange"),
                 Box::new(*b"banana"),
                 Box::new(*b"mango"),
+                Box::new(*b"cherry"),
             ],
             fields: vec![
                 Field {
@@ -361,32 +371,49 @@ mod effect_code_tests {
                     cat: FieldCategory::Input,
                     ty: StorageType::Vec(VecComps::Two),
                 },
+                Field {
+                    id: 1, // orange
+                    cat: FieldCategory::Uniform,
+                    ty: StorageType::Sampler(SamplerType::Sampler3D),
+                },
             ],
             funcs: vec![
                 Func {
-                    id: 1, // orange
+                    id: 2, // banana
                     ret: None, // void
                     args: vec![
                         Arg {
-                            id: 2, // banana
+                            id: 3, // mango
                             ty: StorageType::Int,
                         },
                         Arg {
-                            id: 3, // mango
-                            ty: StorageType::Sampler(SamplerType::Sampler3D),
+                            id: 4, // cherry
+                            ty: StorageType::MatN(VecComps::Three),
                         },
                     ],
-                    def: FuncDef { },
+                    def: FuncDef {
+                        // todo
+                    },
                 },
             ],
-            main: FuncDef { },
+            main: FuncDef {
+                // todo
+            },
         };
 
         let s = code.to_cstr().unwrap();
-        const BAR: &str = "------------------------------------------------------";
         println!("DEBUG:\n{s:?}\n");
-        let s = s.to_string_lossy();
-        println!("DISPLAY:\n{BAR}\n{s}\n{BAR}");
+        let s1 = s.to_string_lossy().to_owned();
+        println!("DISPLAY:\n{SEPARATOR}\n{s1}\n{SEPARATOR}");
+        assert_eq!(s.as_bytes(),
+b"#version 330
+in vec2 apple;
+uniform sampler3D orange;
+void banana(int mango, mat3 cherry) {
+}
+void main() {
+}"
+        );
     }
 }
 

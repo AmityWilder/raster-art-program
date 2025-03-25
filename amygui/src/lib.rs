@@ -7,7 +7,9 @@ pub mod button;
 pub mod region;
 pub mod option;
 pub mod align_box;
+pub mod events;
 
+pub(crate) use events::Events;
 pub(crate) use raylib::prelude::*;
 
 pub enum Visibility {
@@ -30,22 +32,6 @@ pub enum Direction {
     #[default]
     Row,
     Column,
-}
-
-pub struct Events {
-    pub hover: Option<Vector2>,
-    pub left_mouse_press: Option<()>,
-    pub scroll: Option<Vector2>,
-}
-
-impl Events {
-    pub fn check(rl: &RaylibHandle) -> Self {
-        Self {
-            hover: Some(rl.get_mouse_position()),
-            left_mouse_press: rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT).then_some(()),
-            scroll: Some(rl.get_mouse_wheel_move_v().into()),
-        }
-    }
 }
 
 pub trait Node {

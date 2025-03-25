@@ -74,20 +74,20 @@ impl<T: Node> Node for Button<T> {
         let (item, slot) = self.child_mut(slot);
         item.tick(rl, thread, slot, events);
         if !matches!(self.state, ButtonState::Disabled) {
-            if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
+            if events.left_mouse_release {
                 self.state = ButtonState::Normal;
             }
-            if events.hover.is_some_and(|mouse_pos| slot.check_collision_point_rec(mouse_pos)) {
-                events.hover = None;
+
+            if events.hover.take_if(|mouse_pos| slot.check_collision_point_rec(*mouse_pos)).is_some() {
                 if matches!(self.state, ButtonState::Normal) {
                     self.state = ButtonState::Hover;
                 }
             } else {
                 self.state = ButtonState::Normal;
             }
+
             if matches!(self.state, ButtonState::Hover) {
-                if events.left_mouse_press.is_some() {
-                    events.left_mouse_press = None;
+                if events.left_mouse_press.take().is_some() {
                     self.state = ButtonState::Press;
                 }
             }
