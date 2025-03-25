@@ -78,9 +78,26 @@ impl<T: Node> Node for AlignBoxNode<T> {
     }
 
     #[inline]
-    fn tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+        for (item, slot) in self.children_mut(slot) {
+            item.dibs_tick(slot, events);
+        }
+    }
+
+    #[inline]
+    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
         let (item, slot) = self.child_mut(slot);
-        item.tick(rl, thread, slot, events);
+        if events.hover.is_some_and_overlapping(slot) {
+            item.active_tick(rl, thread, slot, events);
+        } else {
+            item.inactive_tick(rl, thread, slot, events);
+        }
+    }
+
+    #[inline]
+    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.inactive_tick(rl, thread, slot, events);
     }
 
     #[inline]

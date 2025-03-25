@@ -102,18 +102,28 @@ impl<T: Node> Node for UniformGridNode<T> {
         ((width, Some(width)), (height, Some(height)))
     }
 
-    fn bounds(&self, slot: Rectangle) -> Rectangle {
-        let Rectangle { x, y, width: _, height: _ } = slot;
-        let ((width, max_width), (height, max_height)) = self.size_range();
-        debug_assert_eq!((max_width, max_height), (Some(width), Some(height)),
-            "2025-3-24 [`UniformGridNode::bounds()`] implementation written with assumption of non-expandable size");
-        Rectangle { x, y, width, height }
+    #[inline]
+    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+        for (item, slot) in self.children_mut(slot) {
+            item.dibs_tick(slot, events);
+        }
     }
 
     #[inline]
-    fn tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
         for (item, slot) in self.children_mut(slot) {
-            item.tick(rl, thread, slot, events);
+            if events.hover.is_some_and_overlapping(slot) {
+                item.active_tick(rl, thread, slot, events);
+            } else {
+                item.inactive_tick(rl, thread, slot, events);
+            }
+        }
+    }
+
+    #[inline]
+    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+        for (item, slot) in self.children_mut(slot) {
+            item.inactive_tick(rl, thread, slot, events);
         }
     }
 

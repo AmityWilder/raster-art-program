@@ -1,7 +1,5 @@
 use crate::*;
 
-pub struct Dibs(());
-
 pub struct Event<T = ()> {
     event: Option<T>,
 }
@@ -24,6 +22,18 @@ impl<T> Event<T> {
     }
 
     #[inline]
+    pub fn take_with_dibs(&mut self) -> T {
+        self.event.take().expect("only one source should have dibs at a time")
+    }
+
+    #[inline]
+    pub fn take_with_dibs_if<P: FnOnce(&T) -> bool>(&mut self, predicate: P) -> Option<T> {
+        if self.event.as_ref().map_or(false, predicate) {
+            Some(self.event.expect("only one source should have dibs at a time"))
+        } else { None }
+    }
+
+    #[inline]
     pub fn is_some(&self) -> bool {
         self.event.is_some()
     }
@@ -34,22 +44,40 @@ impl<T> Event<T> {
     }
 }
 
-pub struct Events {
-    pub hover: Event<Vector2>,
+pub struct MouseEvent {
+    pub position: Vector2,
     pub left_mouse_press: Event<()>,
+    pub scroll: Event<Vector2>,
+}
+
+impl Event<MouseEvent> {
+    #[inline]
+    pub fn is_some_and_overlapping(&self, region: Rectangle) -> bool {
+        self.event.is_some_and(move |e| region.check_collision_point_rec(e.position))
+    }
+
+    #[inline]
+    pub fn take_if_overlapping(&mut self, region: Rectangle) -> Option<MouseEvent> {
+        self.take_if(move |e| region.check_collision_point_rec(e.position))
+    }
+}
+
+pub struct Events {
+    pub hover: Event<MouseEvent>,
     /// left mouse release is not consumable, becasuse everything
     /// should be allowed to reset even if something else "consumed" it
     pub left_mouse_release: bool,
-    pub scroll: Event<Vector2>,
 }
 
 impl Events {
     pub fn check(rl: &RaylibHandle) -> Self {
         Self {
-            hover: Event::new(Some(rl.get_mouse_position())),
-            left_mouse_press: Event::new(rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT).then_some(())),
+            hover: Event::new(Some(MouseEvent {
+                position: rl.get_mouse_position(),
+                left_mouse_press: Event::new(rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT).then_some(())),
+                scroll: Event::new(Some(rl.get_mouse_wheel_move_v().into())),
+            })),
             left_mouse_release: rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT),
-            scroll: Event::new(Some(rl.get_mouse_wheel_move_v().into())),
         }
     }
 }

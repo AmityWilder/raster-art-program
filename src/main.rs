@@ -1,7 +1,7 @@
 #![allow(unused)] // at least until everything is in a somewhat-complete state
 
 use std::num::{NonZeroU16, NonZeroU32};
-use amygui::{button::{Button, ButtonState, ButtonStyle}, events::Events, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, Fill, Node, ParentNode, Visibility};
+use amygui::{button::{Button, ButtonState, ButtonStyle}, events::Events, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, Empty, Node, ParentNode, Visibility};
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
 use raylib::prelude::*;
@@ -46,20 +46,20 @@ fn main() {
         rvec2(3.0, 3.0),    // gap
         const { unsafe { NonZeroU32::new_unchecked(2) } }, // columns
         [
-            Button::new(Fill),
-            Button::new(Fill),
+            Button::new(Empty),
+            Button::new(Empty),
 
-            Button::new(Fill),
-            Button::new(Fill),
+            Button::new(Empty),
+            Button::new(Empty),
 
-            Button::new(Fill),
-            Button::new(Fill),
+            Button::new(Empty),
+            Button::new(Empty),
 
-            Button::new(Fill),
-            Button::new(Fill),
+            Button::new(Empty),
+            Button::new(Empty),
 
-            Button::new(Fill),
-            Button::new(Fill),
+            Button::new(Empty),
+            Button::new(Empty),
         ],
     ));
 

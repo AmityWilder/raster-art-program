@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Clone, Copy)]
 pub struct ButtonStyle {
     pub disabled_color: Color,
     pub normal_color: Color,
@@ -24,7 +25,7 @@ pub enum ButtonState {
     Press,
 }
 
-pub struct Button<T = Fill> {
+pub struct Button<T = Empty> {
     pub visibility: Visibility,
     pub content: T,
     state: ButtonState,
@@ -70,28 +71,43 @@ impl<T: Node> Node for Button<T> {
         self.content.size_range()
     }
 
-    fn tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
+    #[inline]
+    fn dibs_tick(&mut self, slot: Rectangle, events: &mut Events) {
+        for (item, slot) in self.children_mut(slot) {
+            item.dibs_tick(slot, events);
+        }
+    }
+
+    fn active_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &mut Events) {
         let (item, slot) = self.child_mut(slot);
-        item.tick(rl, thread, slot, events);
+        if events.hover.is_some_and_overlapping(slot) {
+            item.active_tick(rl, thread, slot, events);
+        } else {
+            item.inactive_tick(rl, thread, slot, events);
+        }
         if !matches!(self.state, ButtonState::Disabled) {
             if events.left_mouse_release {
                 self.state = ButtonState::Normal;
             }
 
-            if events.hover.take_if(|mouse_pos| slot.check_collision_point_rec(*mouse_pos)).is_some() {
+            if let Some(hover) = events.hover.take_if_overlapping(slot) {
                 if matches!(self.state, ButtonState::Normal) {
                     self.state = ButtonState::Hover;
+                }
+
+                if hover.left_mouse_press.is_some() {
+                    self.state = ButtonState::Press;
                 }
             } else {
                 self.state = ButtonState::Normal;
             }
-
-            if matches!(self.state, ButtonState::Hover) {
-                if events.left_mouse_press.take().is_some() {
-                    self.state = ButtonState::Press;
-                }
-            }
         }
+    }
+
+    #[inline]
+    fn inactive_tick(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread, slot: Rectangle, events: &Events) {
+        let (item, slot) = self.child_mut(slot);
+        item.inactive_tick(rl, thread, slot, events);
     }
 
     #[inline]
