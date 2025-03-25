@@ -1,13 +1,6 @@
-use std::{cell::RefCell, num::NonZeroU16, rc::{Rc, Weak}};
+use std::{cell::RefCell, num::NonZeroU16};
 use raylib::prelude::*;
-
-pub type Raster = RefCell<RenderTexture2D>;
-pub type RcRaster = Rc<Raster>;
-pub type WeakRaster = Weak<Raster>;
-
-pub type Effect = RefCell<Shader>;
-pub type RcEffect = Rc<Effect>;
-pub type WeakEffect = Weak<Effect>;
+use crate::{effect::{Effect, RcEffect, WeakEffect}, raster::{RcRaster, WeakRaster}};
 
 pub enum LayerContent {
     Raster {
@@ -49,21 +42,21 @@ impl LayerContent {
 
 pub struct Layer {
     pub content: LayerContent,
-    pub shader: Option<WeakEffect>,
+    pub effect: Option<WeakEffect>,
 }
 
 impl Layer {
     pub const fn new(content: LayerContent) -> Self {
         Self {
             content,
-            shader: None,
+            effect: None,
         }
     }
 
-    pub fn with_effect(content: LayerContent, shader: &RcEffect) -> Self {
+    pub fn with_effect(content: LayerContent, effect: &RcEffect) -> Self {
         Self {
             content,
-            shader: Some(RcEffect::downgrade(shader)),
+            effect: Some(RcEffect::downgrade(effect)),
         }
     }
 
@@ -103,9 +96,9 @@ impl Layer {
                 d.clear_background(Color::BLANK);
                 for child in &*children {
                     child.rtex(|rtex: &RenderTexture2D| {
-                        if let Some(shader_rc) = child.shader.as_ref().and_then(|shader| shader.upgrade()) {
-                            let shader_borrow = shader_rc.borrow();
-                            let mut d = d.begin_shader_mode(&*shader_borrow);
+                        if let Some(effect_rc) = child.effect.as_ref().and_then(|effect| effect.upgrade()) {
+                            let mut effect_borrow = effect_rc.borrow_mut();
+                            let mut d = effect_borrow.begin_shader_mode(&mut d);
                             d.draw_texture_pro(rtex, canvas.flipped_rec, canvas.rec, Vector2::zero(), 0.0, Color::WHITE);
                         } else {
                             d.draw_texture_pro(rtex, canvas.flipped_rec, canvas.rec, Vector2::zero(), 0.0, Color::WHITE);
@@ -118,9 +111,9 @@ impl Layer {
 
     pub fn draw<D: RaylibDraw>(&self, d: &mut D, canvas: &Canvas) {
         self.rtex(|rtex: &RenderTexture2D| {
-            if let Some(shader_rc) = self.shader.as_ref().and_then(|shader| shader.upgrade()) {
-                let shader = shader_rc.borrow();
-                let mut d = d.begin_shader_mode(&*shader);
+            if let Some(effect_rc) = self.effect.as_ref().and_then(|effect| effect.upgrade()) {
+                let mut effect_borrow = effect_rc.borrow_mut();
+                let mut d = effect_borrow.begin_shader_mode(d);
                 d.draw_texture_pro(rtex, canvas.flipped_rec, canvas.rec, Vector2::zero(), 0.0, Color::WHITE);
             } else {
                 d.draw_texture_pro(rtex, canvas.flipped_rec, canvas.rec, Vector2::zero(), 0.0, Color::WHITE);
@@ -190,7 +183,7 @@ impl RasterTable {
             let mut d = (&mut rl).begin_texture_mode(thread, &mut rtex);
             d.clear_background(Color::BLANK);
         }
-        self.rasters.push(Rc::new(RefCell::new(rtex)));
+        self.rasters.push(RcRaster::new(RefCell::new(rtex)));
         self.rasters.last().expect("should have at least one element after pushing")
     }
 
@@ -211,7 +204,7 @@ impl RasterTable {
 
     /// Drop all unreferenced rasters
     pub fn clean(&mut self) {
-        self.rasters.retain(|raster_rc| (Rc::strong_count(raster_rc) + Rc::weak_count(raster_rc)) > 1)
+        self.rasters.retain(|raster_rc| (RcRaster::strong_count(raster_rc) + RcRaster::weak_count(raster_rc)) > 1)
     }
 }
 
@@ -226,14 +219,14 @@ impl EffectTable {
         }
     }
 
-    pub fn create_effect(&mut self, shader: Shader) -> &RcEffect {
-        self.effects.push(Rc::new(RefCell::new(shader)));
+    pub fn create_effect(&mut self, effect: Effect) -> &RcEffect {
+        self.effects.push(RcEffect::new(RefCell::new(effect)));
         self.effects.last().expect("should have at least 1 element after pushing")
     }
 
     /// Drop all unreferenced effects
     pub fn clean(&mut self) {
-        self.effects.retain(|effects_rc| (Rc::strong_count(effects_rc) + Rc::weak_count(effects_rc)) > 1)
+        self.effects.retain(|effects_rc| (RcEffect::strong_count(effects_rc) + RcEffect::weak_count(effects_rc)) > 1)
     }
 }
 

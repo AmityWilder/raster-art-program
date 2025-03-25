@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "amygui"
+version = "0.1.0"
+dependencies = [
+ "raylib",
+]
+
+[[package]]
 name = "arrayvec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -337,6 +344,7 @@ dependencies = [
 name = "raster-art-program"
 version = "0.1.0"
 dependencies = [
+ "amygui",
  "raylib",
 ]
 

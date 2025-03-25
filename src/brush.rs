@@ -1,7 +1,6 @@
 use std::num::NonZeroU16;
 use raylib::prelude::*;
-
-use crate::layer::{Raster, RcRaster};
+use crate::raster::RcRaster;
 
 #[derive(Clone, Copy)]
 pub enum BlendFactor {

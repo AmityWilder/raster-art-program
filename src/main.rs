@@ -1,9 +1,14 @@
+#![allow(unused)] // at least until everything is in a somewhat-complete state
+
 use std::num::NonZeroU16;
+use amygui::{button::{Button, ButtonState, ButtonStyle}, padding, size_box::{SizeBoxLayout, SizeBoxNode}, CollectionNode, Events, Fill, Node, ParentNode, Visibility};
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use events::{Input, InputEvents};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
 use raylib::prelude::*;
 
+mod raster;
+mod effect;
 mod events;
 mod layer;
 mod brush;
@@ -38,6 +43,17 @@ fn main() {
 
     let mut mouse_world_pos_prev = rl.get_mouse_position();
 
+    let mut ui_test_box = SizeBoxNode {
+        layout: SizeBoxLayout {
+            width: 50.0,
+            height: 50.0,
+        },
+        content: Button::new(padding!(
+            20.0,
+            Button::new(Fill),
+        )),
+    };
+
     while !rl.window_should_close() {
         input_events.check(&rl, [
             Input::from(MouseButton::MOUSE_BUTTON_LEFT),
@@ -57,7 +73,16 @@ fn main() {
             Input::from(KeyboardKey::KEY_LEFT_CONTROL),
         ]);
         let mouse_screen_pos = rl.get_mouse_position();
-        rl.hide_cursor();
+        // rl.hide_cursor();
+
+        let window_rec = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: rl.get_screen_width() as f32,
+            height: rl.get_screen_height() as f32,
+        };
+        let mut ui_events = Events::check(&rl);
+        ui_test_box.tick(&mut rl, &thread, window_rec, &mut ui_events);
 
         // brush size
         if let Some(new_size) = rl.get_key_pressed()
@@ -114,7 +139,7 @@ fn main() {
 
         // update layer buffers
         {
-            let mut d = &mut rl; // `RaylibTextureModeExt` is implemented for `&mut RaylibHandle` but not `RaylibHandle`
+            let mut d = &mut rl;
             for layer in layer_tree.layers_mut() {
                 layer.update_buffers(&mut d, &thread, rasters.canvas());
             }
@@ -155,6 +180,8 @@ fn main() {
                     d.draw_ring(mouse_world_pos, brush_radius, brush_radius + px_size, 0.0, 360.0, 20, CROSSHAIR_COLOR);
                 }
             }
+
+            ui_test_box.draw(&mut d, window_rec);
         }
 
         mouse_world_pos_prev = mouse_world_pos;
