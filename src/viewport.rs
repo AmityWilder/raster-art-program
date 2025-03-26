@@ -36,10 +36,10 @@ impl<'a> TickNode<RaylibTickBackend<'a>> for ViewportNode {
     }
 
     fn active_tick(&mut self, tb: &mut RaylibTickBackend<'a>, slot: Rect, events: &mut Events) {
+        let RaylibTickBackend(rl, thread) = tb;
+
         self.brush_pos_prev = self.brush_pos;
         if let Some(mut mouse_event) = events.hover.take() {
-            let RaylibTickBackend(rl, thread) = tb;
-
             let mouse_pos = Vector2::new(
                 mouse_event.position.x,
                 mouse_event.position.y,
@@ -119,6 +119,11 @@ impl<'a> TickNode<RaylibTickBackend<'a>> for ViewportNode {
     }
 
     fn inactive_tick(&mut self, tb: &mut RaylibTickBackend<'a>, slot: Rect, events: &Events) {
+        let RaylibTickBackend(rl, thread) = tb;
+
+        self.camera.target += rl.get_mouse_delta() / self.camera.zoom;
+        self.camera.offset = rl.get_mouse_position();
+
         self.brush_pos_prev = self.brush_pos;
     }
 }

@@ -70,11 +70,13 @@ impl<T: Node> CollectionNode for OverlayBox<T> {
 
     #[inline]
     fn children(&self, slot: Rect) -> Self::Iter<'_> {
+        let slot = self.bounds(slot);
         Iter { iter: self.content.iter(), slot }
     }
 
     #[inline]
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
+        let slot = self.bounds(slot);
         Iter { iter: self.content.iter_mut(), slot }
     }
 }
