@@ -1,11 +1,11 @@
 use crate::*;
 
 #[derive(Clone, Copy)]
-pub struct ButtonStyle<DB: DrawBackend> {
-    pub disabled_color: DB::Color,
-    pub normal_color: DB::Color,
-    pub hover_color: DB::Color,
-    pub press_color: DB::Color,
+pub struct ButtonStyle<ColorT: Copy> {
+    pub disabled_color: ColorT,
+    pub normal_color: ColorT,
+    pub hover_color: ColorT,
+    pub press_color: ColorT,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -16,15 +16,15 @@ pub enum ButtonState {
     Press,
 }
 
-pub struct Button<DB: DrawBackend, T> {
+pub struct Button<ColorT: Copy, T> {
     pub visibility: Visibility,
     pub content: T,
     state: ButtonState,
-    pub style: ButtonStyle<DB>,
+    pub style: ButtonStyle<ColorT>,
 }
 
-impl<DB: DrawBackend, T> Button<DB, T> {
-    pub const fn new(content: T, style: ButtonStyle<DB>) -> Self {
+impl<ColorT: Copy, T> Button<ColorT, T> {
+    pub const fn new(content: T, style: ButtonStyle<ColorT>) -> Self {
         Self {
             visibility: Visibility::Occlude,
             content,
@@ -37,29 +37,31 @@ impl<DB: DrawBackend, T> Button<DB, T> {
         self.state
     }
 
-    pub const fn color(&self) -> DB::Color {
+    pub const fn color(&self) -> &ColorT {
         match self.state {
-            ButtonState::Disabled => self.style.disabled_color,
-            ButtonState::Normal => self.style.normal_color,
-            ButtonState::Hover => self.style.hover_color,
-            ButtonState::Press => self.style.press_color,
+            ButtonState::Disabled => &self.style.disabled_color,
+            ButtonState::Normal => &self.style.normal_color,
+            ButtonState::Hover => &self.style.hover_color,
+            ButtonState::Press => &self.style.press_color,
         }
     }
 }
 
-impl<TB, DB: DrawBackend, T: Node<TB, DB>> Node<TB, DB> for Button<DB, T> {
+impl<ColorT: Copy, T: Node> Node for Button<ColorT, T> {
     #[inline]
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         self.content.size_range()
     }
+}
 
+impl<ColorT: Copy, TB, T: TickNode<TB>> TickNode<TB> for Button<ColorT, T> {
     #[inline]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
+    fn dibs_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
         let (item, slot) = self.child_mut(slot);
-        item.dibs_tick(slot, events);
+        item.dibs_tick(tb, slot, events);
     }
 
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
         let (item, slot) = self.child_mut(slot);
         if events.hover.is_some_and_overlapping(slot) {
             item.active_tick(tb, slot, events);
@@ -86,11 +88,13 @@ impl<TB, DB: DrawBackend, T: Node<TB, DB>> Node<TB, DB> for Button<DB, T> {
     }
 
     #[inline]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) {
         let (item, slot) = self.child_mut(slot);
         item.inactive_tick(tb, slot, events);
     }
+}
 
+impl<ColorT: Copy, DB: DrawBackend<Color = ColorT>, T: DrawNode<DB>> DrawNode<DB> for Button<ColorT, T> {
     #[inline]
     fn draw(&self, d: &mut DB, slot: Rect) {
         d.draw_rect(&slot, self.color());
@@ -99,17 +103,16 @@ impl<TB, DB: DrawBackend, T: Node<TB, DB>> Node<TB, DB> for Button<DB, T> {
     }
 }
 
-impl<TB, DB: DrawBackend, T: Node<TB, DB>> ParentNode<TB, DB> for Button<DB, T> {
+impl<ColorT: Copy, T: Node> ParentNode for Button<ColorT, T> {
     type Item = T;
 
-    #[inline]
-    fn child(&self, slot: Rect) -> (&T, Rect) {
-        (&self.content, self.bounds(slot))
+    #[inline(always)]
+    fn content(&self) -> &Self::Item {
+        &self.content
     }
 
-    #[inline]
-    fn child_mut(&mut self, mut slot: Rect) -> (&mut T, Rect) {
-        slot = self.bounds(slot);
-        (&mut self.content, slot)
+    #[inline(always)]
+    fn content_mut(&mut self) -> &mut Self::Item {
+        &mut self.content
     }
 }

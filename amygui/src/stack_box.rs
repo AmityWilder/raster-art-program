@@ -1,25 +1,34 @@
 use crate::*;
 
-pub struct Iter<'a> {
+pub struct Iter<'a, I> {
+    iter: I,
     layout: &'a StackBoxLayout,
     slot: Rect,
 }
 
-impl<'a> Iter<'a> {
-    pub const fn new(layout: &'a StackBoxLayout, slot: Rect) -> Self {
+impl<'a, I> Iter<'a, I> {
+    pub const fn new(iter: I, layout: &'a StackBoxLayout, slot: Rect) -> Self {
         Self {
+            iter,
             layout,
             slot,
         }
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
-    type Item = Rect;
+impl<'a, I: Iterator> Iterator for Iter<'a, I> {
+    type Item = (I::Item, Rect);
 
     fn next(&mut self) -> Option<Self::Item> {
+        _ = self.iter;
         _ = self.layout;
         _ = self.slot;
+        todo!()
+    }
+}
+
+impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for Iter<'a, I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
         todo!()
     }
 }
@@ -52,7 +61,7 @@ impl<T> StackBoxNode<T> {
     }
 }
 
-impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for StackBoxNode<T> {
+impl<T: Node> Node for StackBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let total_gap = (self.content.len() - 1) as f32 * self.layout.gap;
         let (width, height) = match self.layout.direction {
@@ -111,52 +120,22 @@ impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for StackBoxNode<T> {
         }
         ((min_width, max_width), (min_height, max_height))
     }
-
-    #[inline]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
-    }
-
-    #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(tb, slot, events);
-            } else {
-                item.inactive_tick(tb, slot, events);
-            }
-        }
-    }
-
-    #[inline]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(tb, slot, events);
-        }
-    }
-
-    #[inline]
-    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
-        for (item, slot) in self.children(slot) {
-            item.draw(d, slot);
-        }
-    }
 }
 
-impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for StackBoxNode<T> {
+impl<T: Node> CollectionNode for StackBoxNode<T> {
     type Item = T;
-    type Iter<'a> = std::iter::Zip<std::slice::Iter<'a, T>, Iter<'a>> where Self: 'a;
-    type IterMut<'a> = std::iter::Zip<std::slice::IterMut<'a, T>, Iter<'a>> where Self: 'a;
+    type Iter<'a> = Iter<'a, std::slice::Iter<'a, T>> where Self: 'a;
+    type IterMut<'a> = Iter<'a, std::slice::IterMut<'a, T>> where Self: 'a;
 
     #[inline]
     fn children(&self, slot: Rect) -> Self::Iter<'_> {
-        self.content.iter().zip(Iter::new(&self.layout, slot))
+        Iter::new(self.content.iter(), &self.layout, slot)
     }
 
     #[inline]
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
-        self.content.iter_mut().zip(Iter::new(&self.layout, slot))
+        Iter::new(self.content.iter_mut(), &self.layout, slot)
     }
 }
+
+impl<T: Node> SimpleCollectionNode for StackBoxNode<T> {}

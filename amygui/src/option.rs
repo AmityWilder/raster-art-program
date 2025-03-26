@@ -1,6 +1,6 @@
 use crate::*;
 
-impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for Option<T> {
+impl<T: Node> Node for Option<T> {
     #[inline]
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         match self {
@@ -8,86 +8,43 @@ impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for Option<T> {
             None => ((0.0, None), (0.0, None)),
         }
     }
-
-    #[inline]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
-    }
-
-    #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(tb, slot, events);
-            } else {
-                item.inactive_tick(tb, slot, events);
-            }
-        }
-    }
-
-    #[inline]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(tb, slot, events);
-        }
-    }
-
-    #[inline]
-    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
-        for (item, slot) in self.children(slot) {
-            item.draw(d, slot);
-        }
-    }
 }
 
-pub struct Iter<'a, T: 'a> {
-    inner: Option<&'a T>,
+pub struct Iter<T> {
+    inner: Option<T>,
     slot: Rect,
 }
 
-impl<'a, T: 'a> Iterator for Iter<'a, T> {
-    type Item = (&'a T, Rect);
+impl<T> Iterator for Iter<T> {
+    type Item = (T, Rect);
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(inner) = self.inner.take() {
-            Some((inner, self.slot))
-        } else { None }
+        self.inner.take().map(|x| (x, self.slot))
     }
 }
 
-pub struct IterMut<'a, T: 'a> {
-    inner: Option<&'a mut T>,
-    slot: Rect,
-}
-
-impl<'a, T: 'a> Iterator for IterMut<'a, T> {
-    type Item = (&'a mut T, Rect);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(inner) = self.inner.take() {
-            Some((inner, self.slot))
-        } else { None }
+impl<T> DoubleEndedIterator for Iter<T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.next() // heeheehee mono-element iterator is symmetric :3
     }
 }
 
-impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for Option<T> {
+impl<T: Node> CollectionNode for Option<T> {
     type Item = T;
-    type Iter<'a> = Iter<'a, T> where Self: 'a;
-    type IterMut<'a> = IterMut<'a, T> where Self: 'a;
+    type Iter<'a> = Iter<&'a T> where Self: 'a;
+    type IterMut<'a> = Iter<&'a mut T> where Self: 'a;
 
+    #[inline]
     fn children(&self, slot: Rect) -> Self::Iter<'_> {
-        Iter {
-            inner: self.as_ref(),
-            slot,
-        }
+        Iter { inner: self.as_ref(), slot }
     }
 
+    #[inline]
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
-        IterMut {
-            inner: self.as_mut(),
-            slot,
-        }
+        Iter { inner: self.as_mut(), slot }
     }
 }
+
+impl<T: Node> SimpleCollectionNode for Option<T> {}

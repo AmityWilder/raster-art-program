@@ -31,7 +31,7 @@ impl<T> AlignBoxNode<T> {
     }
 }
 
-impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for AlignBoxNode<T> {
+impl<T: Node> Node for AlignBoxNode<T> {
     #[inline]
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min, w_max), (h_min, h_max)) = self.content.size_range();
@@ -76,47 +76,20 @@ impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for AlignBoxNode<T> {
         }
         Rect { x_min, y_min, x_max, y_max }
     }
-
-    #[inline]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
-        let (item, slot) = self.child_mut(slot);
-        item.dibs_tick(slot, events);
-    }
-
-    #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
-        let (item, slot) = self.child_mut(slot);
-        if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(tb, slot, events);
-        } else {
-            item.inactive_tick(tb, slot, events);
-        }
-    }
-
-    #[inline]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
-        let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(tb, slot, events);
-    }
-
-    #[inline]
-    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
-        let (item, slot) = self.child(slot);
-        item.draw(d, slot);
-    }
 }
 
-impl<TB, DB, T: Node<TB, DB>> ParentNode<TB, DB> for AlignBoxNode<T> {
+impl<T: Node> ParentNode for AlignBoxNode<T> {
     type Item = T;
 
-    #[inline]
-    fn child(&self, slot: Rect) -> (&T, Rect) {
-        (&self.content, self.bounds(slot))
+    #[inline(always)]
+    fn content(&self) -> &Self::Item {
+        &self.content
     }
 
-    #[inline]
-    fn child_mut(&mut self, mut slot: Rect) -> (&mut T, Rect) {
-        slot = self.bounds(slot);
-        (&mut self.content, slot)
+    #[inline(always)]
+    fn content_mut(&mut self) -> &mut Self::Item {
+        &mut self.content
     }
 }
+
+impl<T: Node> SimpleParentNode for AlignBoxNode<T> {}

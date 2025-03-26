@@ -1,32 +1,35 @@
 #![allow(unused)] // at least until everything is in a somewhat-complete state
 
 use std::num::{NonZeroU16, NonZeroU32};
-use amygui::{button::{Button, ButtonState, ButtonStyle}, events::Events, padding, size_box::{SizeBoxLayout, SizeBoxNode}, uniform_grid::UniformGridNode, CollectionNode, DrawBackend, Empty, InputBackend, Node, ParentNode, Point, Rect, TickBackend, Visibility};
+use amygui::prelude::*;
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
 use raylib::prelude::*;
+use viewport::ViewportNode;
 
 mod raster;
 mod effect;
 mod layer;
 mod brush;
+mod viewport;
 
-pub struct RaylibInputBackend<'a>(pub &RaylibHandle);
+pub struct RaylibInputBackend<'a>(pub &'a RaylibHandle);
 
-impl<'a> InputBackend for RaylibInputBackend<'a> {
+impl InputBackend for RaylibInputBackend<'_> {
     #[inline]
     fn mouse_position(&mut self) -> Point {
-        self.0.get_mouse_position()
+        let Vector2 { x, y } = self.0.get_mouse_position();
+        Point { x, y }
     }
 
     #[inline]
     fn is_m1_pressed(&mut self) -> bool {
-        self.0.is_mouse_button_pressed(MouseButton::LEFT_MOUSE_BUTTON)
+        self.0.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
     }
 
     #[inline]
     fn is_m1_released(&mut self) -> bool {
-        self.0.is_mouse_button_released(MouseButton::LEFT_MOUSE_BUTTON)
+        self.0.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT)
     }
 
     #[inline]
@@ -36,17 +39,17 @@ impl<'a> InputBackend for RaylibInputBackend<'a> {
     }
 }
 
-pub struct RaylibTickBackend<'a>(&'a mut RaylibHandle, &'a RaylibThread);
+pub struct RaylibTickBackend<'a>(&'a mut RaylibHandle, &'a RaylibThread, );
 
-impl<'a> TickBackend for RaylibTickBackend<'a> {}
+impl TickBackend for RaylibTickBackend<'_> {}
 
-pub struct RaylibDrawBackend<'a>(&'a mut RaylibDrawHandle);
+pub struct RaylibDrawBackend<'a, 'b, 'c>(&'a mut RaylibDrawHandle<'b>, &'c mut RasterTable, &'c mut EffectTable, &'c mut LayerTree);
 
-impl<'a> DrawBackend for RaylibDrawBackend<'a> {
+impl DrawBackend for RaylibDrawBackend<'_, '_, '_> {
     type Color = Color;
 
     #[inline]
-    fn draw_rect(&mut self, rect: &Rect, color: Self::Color) {
+    fn draw_rect(&mut self, rect: &Rect, color: &Self::Color) {
         self.0.draw_rectangle_rec(Rectangle {
             x: rect.x_min,
             y: rect.y_min,
@@ -56,9 +59,19 @@ impl<'a> DrawBackend for RaylibDrawBackend<'a> {
     }
 
     #[inline]
-    fn draw_text(&mut self, text: &str, top_left: Point, font_size: f32, color: Self::Color) {
+    fn draw_text(&mut self, text: &str, top_left: Point, font_size: f32, color: &Self::Color) {
         self.0.draw_text(text, top_left.x as i32, top_left.y as i32, font_size as i32, color);
     }
+}
+
+impl_guinode_union!{
+    pub enum(T) UINode<T> {
+        AmyGUI(AmyGUINode<Color, T>),
+        Viewport(ViewportNode),
+    }
+    impl(T: Node) Node;
+    impl('a, T: TickNode<RaylibTickBackend<'a>>) Tick<(RaylibTickBackend<'a>)>;
+    impl('a, 'b, 'c, T: DrawNode<RaylibDrawBackend<'a, 'b, 'c>>) Draw<(RaylibDrawBackend<'a, 'b, 'c>)>;
 }
 
 #[allow(clippy::cognitive_complexity)]
@@ -72,159 +85,77 @@ fn main() {
     rl.set_target_fps(60);
     rl.maximize_window();
 
-    let mut rasters = RasterTable::new(const { unsafe { Canvas::new_unchecked(128, 128) } });
-    let mut effects = EffectTable::new();
-    let mut layer_tree = LayerTree::new();
-    let mut camera = Camera2D {
-        offset: Vector2::zero(),
-        target: Vector2::new(-10.0, -10.0),
-        rotation: 0.0,
-        zoom: 1.0,
-    };
-    let mut brush = Brush::new(BrushPreset::new(const { unsafe { NonZeroU16::new_unchecked(1) } }, Color::BLACK));
-
-    {
-        let raster0 = rasters.create_raster(&mut rl, &thread);
-        brush.set_target(raster0.clone());
-        layer_tree.push(Layer::new(LayerContent::new_raster(raster0)));
-    }
-
-    let mut mouse_world_pos_prev = None;
-
-    const STYLE: ButtonStyle = ButtonStyle {
+    const STYLE: ButtonStyle<Color> = ButtonStyle {
         disabled_color: Color::GRAY,
         normal_color: Color::DODGERBLUE,
         hover_color: Color::SKYBLUE,
         press_color: Color::BLUE,
     };
-    let mut tool_panel = padding!(5.0, UniformGridNode::from_iter(
-        rvec2(24.0, 24.0),  // item size
-        rvec2(3.0, 3.0),    // gap
-        const { unsafe { NonZeroU32::new_unchecked(2) } }, // columns
-        [
-            Button::new(Empty, STYLE),
-            Button::new(Empty, STYLE),
+    let mut gui = OverlayBox::from_iter([
+        UINode::Viewport(ViewportNode::new(
+            Brush::new(BrushPreset::new(const { unsafe { NonZeroU16::new_unchecked(1) } }, Color::BLACK)),
+            Camera2D {
+                offset: Vector2::zero(),
+                target: Vector2::new(-10.0, -10.0),
+                rotation: 0.0,
+                zoom: 1.0,
+            }
+        )),
+        UINode::AmyGUI(AmyGUINode::PadBox(padding!(5.0, UniformGridNode::from_iter(
+            24.0, 24.0,  // item size
+            3.0, 3.0,    // gap
+            const { unsafe { NonZeroU32::new_unchecked(2) } }, // columns
+            [
+                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
 
-            Button::new(Empty, STYLE),
-            Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
 
-            Button::new(Empty, STYLE),
-            Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
 
-            Button::new(Empty, STYLE),
-            Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
 
-            Button::new(Empty, STYLE),
-            Button::new(Empty, STYLE),
-        ],
-    ));
+                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE),
+            ],
+        )))),
+    ]);
 
-    let mut is_m1_space_panning = false;
-    let mut is_m3_panning = false;
-    let mut is_drawing = false;
-    let mut is_cursor_shown = true;
+    let mut rasters = RasterTable::new(const { unsafe { Canvas::new_unchecked(128, 128) } });
+    let mut effects = EffectTable::new();
+    let mut layer_tree = LayerTree::new();
+
+    {
+        let UINode::Viewport(viewport) = &mut gui.content[0] else { panic!("you forgot to update this") };
+        let raster0 = rasters.create_raster(&mut rl, &thread);
+        viewport.brush.set_target(raster0.clone());
+        layer_tree.push(Layer::new(LayerContent::new_raster(raster0)));
+    }
 
     while !rl.window_should_close() {
-        let window_rec = Rectangle {
-            x: 0.0,
-            y: 0.0,
-            width: rl.get_screen_width() as f32,
-            height: rl.get_screen_height() as f32,
-        };
-        let mut ui_events = Events::check(&mut RaylibInputBackend(&rl));
-
-        // UI must occur first because it appears in front and would consume the events
-        tool_panel.tick(&mut rl, &thread, window_rec, &mut ui_events);
-
-        // show cursor while hovering UI
-        if ui_events.hover.is_none() != is_cursor_shown {
-            is_cursor_shown = !is_cursor_shown;
-            if is_cursor_shown {
-                rl.show_cursor();
-            } else {
-                rl.hide_cursor();
-            }
-        }
-
         // brush size
         if let Some(new_size) = rl.get_key_pressed()
             .map(|key| key as i32 - KeyboardKey::KEY_ONE as i32 + 1)
             .filter(|n| (1..=9).contains(n))
             .map(|n| NonZeroU16::new(u16::try_from(n).unwrap()).unwrap())
         {
-            brush.preset.size = new_size;
+            let UINode::Viewport(viewport) = &mut gui.content[0] else { panic!("you forgot to update this") };
+            viewport.brush.preset.size = new_size;
         }
 
-        // zoom/pan
-        {
-            let is_zoom_scrolling = rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL);
+        let window_rec = Rect {
+            x_min: 0.0,
+            y_min: 0.0,
+            x_max: rl.get_screen_width () as f32,
+            y_max: rl.get_screen_height() as f32,
+        };
+        let mut ui_events = Events::check(&mut RaylibInputBackend(&rl));
 
-            if is_m1_space_panning {
-                if ui_events.left_mouse_release || rl.is_key_released(KeyboardKey::KEY_SPACE) {
-                    is_m1_space_panning = false
-                }
-            } else {
-                if rl.is_key_down(KeyboardKey::KEY_SPACE) {
-                    if ui_events.left_mouse_press.take().is_some() {
-                        is_m1_space_panning = true;
-                    }
-                }
-            }
-
-            is_m3_panning = rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_MIDDLE);
-
-            let is_pan_scrolling = !is_zoom_scrolling;
-
-            let mut pan = Vector2::zero();
-            if is_pan_scrolling {
-                if let Some(scroll) = ui_events.scroll.take() {
-                    pan += scroll * 20.0;
-                }
-            }
-            if is_m1_space_panning || is_m3_panning {
-                pan += rl.get_mouse_delta();
-            }
-
-            camera.target += (rl.get_mouse_delta() - pan) / camera.zoom;
-            camera.offset = rl.get_mouse_position();
-
-            if is_zoom_scrolling {
-                if let Some(scroll) = ui_events.scroll.take() {
-                    let scroll = if scroll.x.abs() < scroll.y.abs() { scroll.y } else { scroll.x };
-                    if scroll > 0.0 {
-                        if camera.zoom < 32.0 {
-                            camera.zoom *= 2.0;
-                        }
-                    } else if scroll < 0.0 {
-                        if camera.zoom > 0.125 {
-                            camera.zoom /= 2.0;
-                        }
-                    }
-                }
-            }
-        }
-
-        let mouse_world_pos = ui_events.hover.take().map(|pos| rl.get_screen_to_world2D(pos, camera));
-        if let Some(mouse_screen_pos) = ui_events.hover.take() {}
-
-        if is_drawing {
-            if ui_events.left_mouse_release {
-                is_drawing = false
-            }
-        } else {
-            if ui_events.left_mouse_press.take().is_some() {
-                is_drawing = true;
-            }
-        }
-
-        // edit artwork
-        if let Some(mouse_world_pos) = mouse_world_pos {
-            if is_drawing {
-                if let Some((mut d, preset)) = rl.begin_brush_target_mode(&thread, &mut brush) {
-                    d.draw_line_brush(preset, mouse_world_pos_prev.unwrap_or(mouse_world_pos), mouse_world_pos);
-                }
-            }
-        }
+        // UI must occur first because it appears in front and would consume the events
+        gui.active_tick(&mut RaylibTickBackend(&mut rl, &thread), window_rec, &mut ui_events);
 
         // update layer buffers
         {
@@ -238,43 +169,7 @@ fn main() {
             let mut d = rl.begin_drawing(&thread);
             d.clear_background(Color::BLACK);
 
-            // world
-            {
-                let mut d = d.begin_mode2D(camera);
-                let px_size = camera.zoom.recip();
-
-                d.draw_rectangle_rec(rasters.canvas().rec, Color::new(64,64,64,255));
-
-                // draw artwork
-                for layer in layer_tree.layers() {
-                    layer.draw(&mut d, rasters.canvas());
-                }
-
-                if let Some(mouse_world_pos) = mouse_world_pos {
-                    // brush preview
-                    d.draw_line_brush(&brush.preset, mouse_world_pos_prev.unwrap_or(mouse_world_pos), mouse_world_pos);
-
-                    // crosshair
-                    {
-                        const CROSSHAIR_COLOR: Color = Color::new(200,200,200,255);
-                        let brush_radius = brush.preset.size.get() as f32 * 0.5;
-                        let mut d = d.begin_blend_mode_a(BlendModeA::CustomSeparate {
-                            src_rgb: BlendFactor::OneMinusDstColor,
-                            dst_rgb: BlendFactor::OneMinusSrcColor,
-                            src_alpha: BlendFactor::Zero,
-                            dst_alpha: BlendFactor::One,
-                            eq_rgb: BlendEquation::FuncAdd,
-                            eq_alpha: BlendEquation::FuncAdd,
-                        });
-                        d.draw_ring(mouse_world_pos, brush_radius, brush_radius + px_size, 0.0, 360.0, 20, CROSSHAIR_COLOR);
-                    }
-                }
-            }
-
-            // ui is drawn last because it appears in front
-            tool_panel.draw(&mut d, window_rec);
+            gui.draw(&mut RaylibDrawBackend(&mut d, &mut rasters, &mut effects, &mut layer_tree), window_rec);
         }
-
-        mouse_world_pos_prev = mouse_world_pos;
     }
 }

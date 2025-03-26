@@ -1,52 +1,68 @@
 use crate::*;
 
-pub struct Iter<'a> {
+pub struct Iter<'a, I> {
+    iter: I,
     layout: &'a SplitBoxLayout,
-    slot: Rect,
-    counter: u8,
+    slot: std::array::IntoIter<Rect, 2>,
 }
 
-impl<'a> Iter<'a> {
-    fn new(layout: &'a SplitBoxLayout, slot: Rect) -> Self {
+impl<'a, I> Iter<'a, I> {
+    fn new(iter: I, layout: &'a SplitBoxLayout, slot: Rect) -> Self {
+        let rects = match layout.direction {
+            Direction::Row => {
+                let (y_min, y_max) = (slot.y_min, slot.y_max);
+                [
+                    Rect {
+                        x_min: slot.x_min,
+                        y_min,
+                        x_max: layout.split_point,
+                        y_max,
+                    },
+                    Rect {
+                        x_min: layout.split_point,
+                        y_min,
+                        x_max: slot.x_max,
+                        y_max,
+                    }
+                ]
+            }
+            Direction::Column => {
+                let (x_min, x_max) = (slot.x_min, slot.x_max);
+                [
+                    Rect {
+                        x_min,
+                        y_min: slot.y_min,
+                        x_max,
+                        y_max: layout.split_point,
+                    },
+                    Rect {
+                        x_min,
+                        y_min: layout.split_point,
+                        x_max,
+                        y_max: slot.y_max,
+                    }
+                ]
+            }
+        };
         Self {
+            iter,
             layout,
-            slot,
-            counter: 0,
+            slot: rects.into_iter(),
         }
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
-    type Item = Rect;
+impl<'a, I: Iterator> Iterator for Iter<'a, I> {
+    type Item = (I::Item, Rect);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.counter < 2 {
-            let x_min;
-            let y_min;
-            let x_max;
-            let y_max;
-            match self.layout.direction {
-                Direction::Row => {
-                    (y_min, y_max) = (self.slot.y_min, self.slot.y_max);
-                    if self.counter == 0 {
-                        (x_min, x_max) = (self.slot.x_min, self.layout.split_point);
-                    } else {
-                        (x_min, x_max) = (self.layout.split_point, self.slot.x_max);
-                    }
-                }
-                Direction::Column => {
-                    (x_min, x_max) = (self.slot.x_min, self.slot.x_max);
-                    if self.counter == 0 {
-                        (y_min, y_max) = (self.slot.y_min, self.layout.split_point);
-                    } else {
-                        (y_min, y_max) = (self.layout.split_point, self.slot.y_max);
-                    }
+        self.iter.next().zip(self.slot.next())
+    }
+}
 
-                }
-            }
-            self.counter += 1;
-            Some(Rect { x_min, y_min, x_max, y_max })
-        } else { None }
+impl<'a, I: DoubleEndedIterator> DoubleEndedIterator for Iter<'a, I> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().zip(self.slot.next_back())
     }
 }
 
@@ -70,7 +86,7 @@ impl<T> SplitBoxNode<T> {
     }
 }
 
-impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for SplitBoxNode<T> {
+impl<T: Node> Node for SplitBoxNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let ((w_min0, w_max0), (h_min0, h_max0)) = self.content[0].size_range();
         let ((w_min1, w_max1), (h_min1, h_max1)) = self.content[1].size_range();
@@ -86,52 +102,22 @@ impl<TB, DB, T: Node<TB, DB>> Node<TB, DB> for SplitBoxNode<T> {
             ),
         }
     }
-
-    #[inline]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {
-        for (item, slot) in self.children_mut(slot) {
-            item.dibs_tick(slot, events);
-        }
-    }
-
-    #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            if events.hover.is_some_and_overlapping(slot) {
-                item.active_tick(tb, slot, events);
-            } else {
-                item.inactive_tick(tb, slot, events);
-            }
-        }
-    }
-
-    #[inline]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {
-        for (item, slot) in self.children_mut(slot) {
-            item.inactive_tick(tb, slot, events);
-        }
-    }
-
-    #[inline]
-    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {
-        for (item, slot) in self.children(slot) {
-            item.draw(d, slot);
-        }
-    }
 }
 
-impl<TB, DB, T: Node<TB, DB>> CollectionNode<TB, DB> for SplitBoxNode<T> {
+impl<T: Node> CollectionNode for SplitBoxNode<T> {
     type Item = T;
-    type Iter<'a> = std::iter::Zip<std::slice::Iter<'a, T>, Iter<'a>> where Self: 'a;
-    type IterMut<'a> = std::iter::Zip<std::slice::IterMut<'a, T>, Iter<'a>> where Self: 'a;
+    type Iter<'a> = Iter<'a, std::slice::Iter<'a, T>> where Self: 'a;
+    type IterMut<'a> = Iter<'a, std::slice::IterMut<'a, T>> where Self: 'a;
 
     #[inline]
     fn children(&self, slot: Rect) -> Self::Iter<'_> {
-        self.content.iter().zip(Iter::new(&self.layout, slot))
+        Iter::new(self.content.iter(), &self.layout, slot)
     }
 
     #[inline]
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
-        self.content.iter_mut().zip(Iter::new(&self.layout, slot))
+        Iter::new(self.content.iter_mut(), &self.layout, slot)
     }
 }
+
+impl<T: Node> SimpleCollectionNode for SplitBoxNode<T> {}

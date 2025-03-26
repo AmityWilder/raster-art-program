@@ -1,17 +1,88 @@
-pub mod size_box;
-pub mod split_box;
-pub mod pad_box;
-pub mod stack_box;
-pub mod uniform_grid;
-pub mod button;
-pub mod region;
-pub mod option;
 pub mod align_box;
+pub mod area_box;
+pub mod button;
 pub mod events;
 pub mod label;
-pub mod area_box;
+pub mod option;
+pub mod overlay_box;
+pub mod pad_box;
+pub mod region;
+pub mod size_box;
+pub mod split_box;
+pub mod stack_box;
+pub mod uniform_grid;
 
 pub(crate) use events::Events;
+
+pub mod prelude {
+    pub use crate::{
+        padding,
+        impl_guinode_union,
+        InputBackend,
+        TickBackend,
+        DrawBackend,
+        Point,
+        Rect,
+        Visibility,
+        Direction,
+        Node,
+        TickNode,
+        DrawNode,
+        ParentNode,
+        SimpleParentNode,
+        CollectionNode,
+        SimpleCollectionNode,
+        GUINode,
+        AmyGUINode,
+        Empty,
+        align_box::{
+            Align,
+            AlignBoxLayout,
+            AlignBoxNode,
+        },
+        area_box::{
+            AreaBoxLayout,
+            AreaBoxNode,
+        },
+        button::{
+            ButtonStyle,
+            ButtonState,
+            Button,
+        },
+        events::{
+            Event,
+            MouseEvent,
+            Events,
+        },
+        label::{
+            LabelStyle,
+            Label,
+        },
+        overlay_box::OverlayBox,
+        pad_box::{
+            PadBoxLayout,
+            PadBoxNode,
+        },
+        region::Region,
+        size_box::{
+            SizeBoxLayout,
+            SizeBoxNode,
+        },
+        split_box::{
+            SplitBoxLayout,
+            SplitBoxNode,
+        },
+        stack_box::{
+            StackBoxLayout,
+            StackBoxNode,
+        },
+        uniform_grid::{
+            UniformGridLayout,
+            UniformGridNode,
+        },
+    };
+}
+use prelude::*;
 
 pub trait InputBackend {
     fn mouse_position(&mut self) -> Point;
@@ -25,8 +96,8 @@ pub trait TickBackend {}
 pub trait DrawBackend {
     type Color: Copy;
 
-    fn draw_rect(&mut self, rect: &Rect, color: Self::Color);
-    fn draw_text(&mut self, text: &str, top_left: Point, font_size: f32, color: Self::Color);
+    fn draw_rect(&mut self, rect: &Rect, color: &Self::Color);
+    fn draw_text(&mut self, text: &str, top_left: Point, font_size: f32, color: &Self::Color);
 }
 
 #[derive(Clone, Copy)]
@@ -89,7 +160,7 @@ pub enum Direction {
     Column,
 }
 
-pub trait Node<TB, DB> {
+pub trait Node {
     /// Give the minmum and maximum for the node's width and height.
     /// [`None`] represents unbounded maximum size, and is determined by what can fit inside the slot.
     /// Minimum size should always be at least 0.
@@ -110,7 +181,11 @@ pub trait Node<TB, DB> {
         let y_max = x_min + max_height.map_or(height, |h| height.min(h));
         Rect { x_min, y_min, x_max, y_max }
     }
+}
 
+/// **Note:** Always tick children BEFORE self (if they are going to tick at all).
+/// The foremost nodes should have priority for event occlusion.
+pub trait TickNode<TB>: Node {
     /// Handle reserving events for objects that are currently in a state that gives them exclusive rights to those events.
     /// Example: A viewport was clicked, and now it has priviledged access to hover events even if the mouse exits the
     /// viewport or hovers something else.
@@ -118,7 +193,7 @@ pub trait Node<TB, DB> {
     /// Nodes with children should always call this recursively.
     #[inline]
     #[allow(unused)]
-    fn dibs_tick(&mut self, slot: Rect, events: &mut Events) {}
+    fn dibs_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {}
 
     /// Tick that occurs only while hovered.
     ///
@@ -127,7 +202,7 @@ pub trait Node<TB, DB> {
     ///
     /// Default implementation calls inactive tick.
     #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) where TB: TickBackend {
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
         self.inactive_tick(tb, slot, events);
     }
 
@@ -136,54 +211,197 @@ pub trait Node<TB, DB> {
     /// Nodes with children should always call this recursively.
     #[inline]
     #[allow(unused)]
-    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) where TB: TickBackend {}
+    fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) {}
+}
 
+/// **Note:** Always draw children AFTER self (if they are going to draw at all).
+/// The foremost nodes should always be drawn after everything else, since that
+/// will display them in front.
+pub trait DrawNode<DB>: Node {
     /// Draw the node.
     ///
     /// Nodes with children should always call this recursively.
     #[inline]
     #[allow(unused)]
-    fn draw(&self, d: &mut DB, slot: Rect) where DB: DrawBackend {}
+    fn draw(&self, d: &mut DB, slot: Rect) {}
 }
 
-pub trait ParentNode<TB, DB> {
-    type Item: Node<TB, DB>;
+pub trait ParentNode: Node {
+    type Item: Node;
 
-    fn child(&self, slot: Rect) -> (&Self::Item, Rect);
-    fn child_mut(&mut self, slot: Rect) -> (&mut Self::Item, Rect);
+    fn content(&self) -> &Self::Item;
+    fn content_mut(&mut self) -> &mut Self::Item;
+
+    #[inline]
+    fn child(&self, slot: Rect) -> (&Self::Item, Rect) {
+        (self.content(), self.bounds(slot))
+    }
+
+    #[inline]
+    fn child_mut(&mut self, mut slot: Rect) -> (&mut Self::Item, Rect) {
+        slot = self.bounds(slot);
+        (self.content_mut(), slot)
+    }
 }
 
-pub trait CollectionNode<TB, DB> {
-    type Item: Node<TB, DB>;
-    type Iter<'a>: Iterator<Item = (&'a Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
-    type IterMut<'a>: Iterator<Item = (&'a mut Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
+/// Alias for [`SimpleCollectionNode`]
+pub trait SimpleParentNode: ParentNode {}
+
+impl<T: SimpleParentNode> SimpleCollectionNode for T {}
+
+impl<T: ParentNode> CollectionNode for T {
+    type Item = T::Item;
+    type Iter<'a> = std::iter::Once<(&'a Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
+    type IterMut<'a> = std::iter::Once<(&'a mut Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
+
+    #[inline]
+    fn children(&self, slot: Rect) -> Self::Iter<'_> {
+        std::iter::once(self.child(slot))
+    }
+
+    #[inline]
+    fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_> {
+        std::iter::once(self.child_mut(slot))
+    }
+}
+
+pub trait CollectionNode: Node {
+    type Item: Node;
+    type Iter<'a>: DoubleEndedIterator<Item = (&'a Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
+    type IterMut<'a>: DoubleEndedIterator<Item = (&'a mut Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
 
     fn children(&self, slot: Rect) -> Self::Iter<'_>;
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_>;
 }
 
-pub struct Empty;
+/// Automatically provides default collection implementations of [`TickNode`] and [`DrawNode`]
+/// that iterate over each slot and call recursively.
+///
+/// Don't use this if your node needs a custom tick/draw implementation.
+pub trait SimpleCollectionNode: CollectionNode {}
 
-impl<TB: TickBackend, DB: DrawBackend> Node<TB, DB> for Empty {}
-
-impl<TB: TickBackend, DB: DrawBackend> Node<TB, DB> for Box<dyn Node<TB, DB>> {
+impl<TB, T: SimpleCollectionNode<Item: TickNode<TB>>> TickNode<TB> for T {
     #[inline]
-    fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
-        self.as_ref().size_range()
+    fn dibs_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
+        for (item, slot) in self.children_mut(slot).rev() {
+            item.dibs_tick(tb, slot, events);
+        }
     }
 
     #[inline]
     fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
-        self.as_mut().active_tick(tb, slot, events);
+        for (item, slot) in self.children_mut(slot).rev() {
+            if events.hover.is_some_and_overlapping(slot) {
+                item.active_tick(tb, slot, events);
+            } else {
+                item.inactive_tick(tb, slot, events);
+            }
+        }
     }
 
     #[inline]
     fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) {
-        self.as_mut().inactive_tick(tb, slot, events);
+        for (item, slot) in self.children_mut(slot).rev() {
+            item.inactive_tick(tb, slot, events);
+        }
     }
+}
 
+impl<DB, T: SimpleCollectionNode<Item: DrawNode<DB>>> DrawNode<DB> for T {
     #[inline]
     fn draw(&self, d: &mut DB, slot: Rect) {
-        self.as_ref().draw(d, slot);
+        for (item, slot) in self.children(slot) {
+            item.draw(d, slot);
+        }
     }
+}
+
+pub trait GUINode<TB, DB>: Node + TickNode<TB> + DrawNode<DB> {}
+
+impl<TB, DB, T: Node + TickNode<TB> + DrawNode<DB>> GUINode<TB, DB> for T {}
+
+pub struct Empty;
+
+impl Node for Empty {}
+impl<TB> TickNode<TB> for Empty {}
+impl<DB> DrawNode<DB> for Empty {}
+
+#[macro_export]
+macro_rules! impl_guinode_union {
+    (
+
+        $(#[$meta:meta])*
+        $vis:vis enum$(($($EnumGen:tt)*))? $Enum:ident$(<$($Gen:ident),* $(,)?>)? {
+            $($Variant:ident($Node:ty)),* $(,)?
+        }
+        impl$(($($NodeGen:tt)*))? Node;
+        impl$(($($TickGen:tt)*))? Tick<($($TB:tt)+)>;
+        impl$(($($DrawGen:tt)*))? Draw<($($DB:tt)+)>;
+    ) => {
+        $(#[$meta])*
+        $vis enum $Enum$(<$($EnumGen)*>)? {
+            $($Variant($Node)),*
+        }
+        impl$(<$($NodeGen)*>)? Node for $Enum$(<$($Gen),*>)? {
+            #[inline]
+            fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
+                match self {
+                    $(Self::$Variant(node) => node.size_range(),)*
+                }
+            }
+            #[inline]
+            fn bounds(&self, slot: Rect) -> Rect {
+                match self {
+                    $(Self::$Variant(node) => node.bounds(slot),)*
+                }
+            }
+        }
+        impl$(<$($TickGen)*>)? TickNode<$($TB)+> for $Enum$(<$($Gen),*>)? {
+            #[inline]
+            fn dibs_tick(&mut self, tb: &mut $($TB)+, slot: Rect, events: &mut Events) {
+                match self {
+                    $(Self::$Variant(node) => node.dibs_tick(tb, slot, events),)*
+                }
+            }
+            #[inline]
+            fn active_tick(&mut self, tb: &mut $($TB)+, slot: Rect, events: &mut Events) {
+                match self {
+                    $(Self::$Variant(node) => node.active_tick(tb, slot, events),)*
+                }
+            }
+            #[inline]
+            fn inactive_tick(&mut self, tb: &mut $($TB)+, slot: Rect, events: &Events) {
+                match self {
+                    $(Self::$Variant(node) => node.inactive_tick(tb, slot, events),)*
+                }
+            }
+        }
+        impl$(<$($DrawGen)*>)? DrawNode<$($DB)+> for $Enum$(<$($Gen),*>)? {
+            #[inline]
+            fn draw(&self, d: &mut $($DB)+, slot: Rect) {
+                match self {
+                    $(Self::$Variant(node) => node.draw(d, slot),)*
+                }
+            }
+        }
+    };
+}
+
+impl_guinode_union!{
+    /// A union of all AmityGUI nodes.
+    pub enum(ColorT: Copy, T) AmyGUINode<ColorT, T> {
+        AlignBox(AlignBoxNode<T>),
+        AreaBox(AreaBoxNode<T>),
+        Button(Button<ColorT, T>),
+        Label(Label<ColorT>),
+        PadBox(PadBoxNode<T>),
+        SizeBox(SizeBoxNode<T>),
+        SplitBox(SplitBoxNode<T>),
+        StackBox(StackBoxNode<T>),
+        UniformGrid(UniformGridNode<T>),
+        Empty(Empty),
+    }
+    impl(ColorT: Copy, T: Node) Node;
+    impl(ColorT: Copy, TB, T: TickNode<TB>) Tick<(TB)>;
+    impl(ColorT: Copy, DB: DrawBackend<Color = ColorT>, T: DrawNode<DB>) Draw<(DB)>;
 }
