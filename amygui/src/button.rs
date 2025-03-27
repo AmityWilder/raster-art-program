@@ -62,15 +62,18 @@ impl<ColorT: Copy, TB, T: TickNode<TB>> TickNode<TB> for Button<ColorT, T> {
     }
 
     fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
-        let (item, slot) = self.child_mut(slot);
-        if events.hover.is_some_and_overlapping(slot) {
-            item.active_tick(tb, slot, events);
-        } else {
-            item.inactive_tick(tb, slot, events);
+        {
+            let (item, slot) = self.child_mut(slot);
+            if events.hover.is_some_and_overlapping(slot) {
+                item.active_tick(tb, slot, events);
+            } else {
+                item.inactive_tick(tb, slot, events);
+            }
         }
+
         if !matches!(self.state, ButtonState::Disabled) {
             if events.left_mouse_release {
-                self.state = ButtonState::Normal;
+                self.state = ButtonState::Hover;
             }
 
             if let Some(hover) = events.hover.take_if_overlapping(slot) {
@@ -82,15 +85,21 @@ impl<ColorT: Copy, TB, T: TickNode<TB>> TickNode<TB> for Button<ColorT, T> {
                     self.state = ButtonState::Press;
                 }
             } else {
-                self.state = ButtonState::Normal;
+                self.state = ButtonState::Hover;
             }
         }
     }
 
     #[inline]
     fn inactive_tick(&mut self, tb: &mut TB, slot: Rect, events: &Events) {
-        let (item, slot) = self.child_mut(slot);
-        item.inactive_tick(tb, slot, events);
+        {
+            let (item, slot) = self.child_mut(slot);
+            item.inactive_tick(tb, slot, events);
+        }
+
+        if !matches!(self.state, ButtonState::Disabled) {
+            self.state = ButtonState::Normal;
+        }
     }
 }
 

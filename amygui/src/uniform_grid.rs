@@ -89,34 +89,35 @@ impl<T> UniformGridNode<T> {
         Self::with_content(item_width, item_height, column_gap, row_gap, num_columns, Vec::from_iter(content))
     }
 
-    pub fn position(&self, relative_point: Point) -> Option<usize> {
-        if relative_point.x >= 0.0 && relative_point.y >= 0.0 {
-            let slot_width  = self.layout.item_width  + self.layout.column_gap;
-            let slot_height = self.layout.item_height + self.layout.row_gap;
-            let (col, col_region) = (relative_point.x / slot_width, relative_point.x % slot_width);
-            if (0.0..u32::MAX as f32).contains(&col) && col_region <= self.layout.item_width {
-                let col_index = col as u32;
-                if col_index < self.layout.num_columns.get() {
-                    let (row, row_region) = (relative_point.y / slot_height, relative_point.y % slot_height);
-                    if (0.0..u32::MAX as f32).contains(&row) && row_region <= self.layout.item_height {
-                        let row_index = row as u32;
-                        let index = row_index * self.layout.num_columns.get() + col_index;
-                        if index < self.content.len() as u32 {
-                            return Some(index as usize);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
+    // // warning: needs review
+    // pub fn position(&self, relative_point: Point) -> Option<usize> {
+    //     if relative_point.x >= 0.0 && relative_point.y >= 0.0 {
+    //         let slot_width  = self.layout.item_width  + self.layout.column_gap;
+    //         let slot_height = self.layout.item_height + self.layout.row_gap;
+    //         let (col, col_region) = (relative_point.x / slot_width, relative_point.x % slot_width);
+    //         if (0.0..u32::MAX as f32).contains(&col) && col_region <= self.layout.item_width {
+    //             let col_index = col as u32;
+    //             if col_index < self.layout.num_columns.get() {
+    //                 let (row, row_region) = (relative_point.y / slot_height, relative_point.y % slot_height);
+    //                 if (0.0..u32::MAX as f32).contains(&row) && row_region <= self.layout.item_height {
+    //                     let row_index = row as u32;
+    //                     let index = row_index * self.layout.num_columns.get() + col_index;
+    //                     if index < self.content.len() as u32 {
+    //                         return Some(index as usize);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     None
+    // }
 }
 
 impl<T: Node> Node for UniformGridNode<T> {
     fn size_range(&self) -> ((f32, Option<f32>), (f32, Option<f32>)) {
         let (num_rows, num_cols) = (
-            self.content.len() as u32 / self.layout.num_columns,
-            self.content.len() as u32 % self.layout.num_columns,
+            (self.content.len() as u32).div_ceil(self.layout.num_columns.get()),
+            self.layout.num_columns.get(),
         );
 
         let width  = num_cols as f32 * (self.layout.column_gap + self.layout.item_width ) - self.layout.column_gap;
@@ -133,7 +134,8 @@ impl<T: Node> CollectionNode for UniformGridNode<T> {
 
     #[inline]
     fn children(&self, slot: Rect) -> Self::Iter<'_> {
-        Iter::new(self.content.iter(), self.content.len() as u32, &self.layout, slot)
+        let n = self.content.len() as u32;
+        Iter::new(self.content.iter(), n, &self.layout, slot)
     }
 
     #[inline]

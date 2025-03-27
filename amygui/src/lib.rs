@@ -170,7 +170,7 @@ pub trait Node {
     }
 
     /// The rectangle that fully contains the "interactable" region of the node.
-    /// Defaults to the slot rectangle shrank to the max size (top left corner).
+    /// Defaults to the slot rectangle shrank to the max size (aligned to the top left corner).
     #[inline]
     fn bounds(&self, slot: Rect) -> Rect {
         let ((min_width, max_width), (min_height, max_height)) = self.size_range();
@@ -190,6 +190,8 @@ pub trait TickNode<TB>: Node {
     /// Example: A viewport was clicked, and now it has priviledged access to hover events even if the mouse exits the
     /// viewport or hovers something else.
     ///
+    /// Should run before active/inactive tick.
+    ///
     /// Nodes with children should always call this recursively.
     #[inline]
     #[allow(unused)]
@@ -199,12 +201,9 @@ pub trait TickNode<TB>: Node {
     ///
     /// Nodes with children should always call this recursively,
     /// and call `inactive_tick` on children that are not hovered.
-    ///
-    /// Default implementation calls inactive tick.
     #[inline]
-    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
-        self.inactive_tick(tb, slot, events);
-    }
+    #[allow(unused)]
+    fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {}
 
     /// Tick that occurs when the element is not hovered.
     ///
@@ -270,7 +269,11 @@ pub trait CollectionNode: Node {
     type Iter<'a>: DoubleEndedIterator<Item = (&'a Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
     type IterMut<'a>: DoubleEndedIterator<Item = (&'a mut Self::Item, Rect)> where Self: 'a, Self::Item: 'a;
 
+    /// Children should be provided background to foreground (draw order).
+    /// [`Iterator::rev()`] is called in tick functions.
     fn children(&self, slot: Rect) -> Self::Iter<'_>;
+    /// Children should be provided background to foreground (draw order).
+    /// [`Iterator::rev()`] is called in tick functions.
     fn children_mut(&mut self, slot: Rect) -> Self::IterMut<'_>;
 }
 

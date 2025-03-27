@@ -93,6 +93,7 @@ impl<T: Node> Node for PadBoxNode<T> {
         )
     }
 
+    #[inline]
     fn bounds(&self, slot: Rect) -> Rect {
         Rect {
             x_min: slot.x_min + self.layout.pad_left,

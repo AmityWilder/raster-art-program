@@ -87,9 +87,9 @@ fn main() {
 
     const STYLE: ButtonStyle<Color> = ButtonStyle {
         disabled_color: Color::GRAY,
-        normal_color: Color::DODGERBLUE,
-        hover_color: Color::SKYBLUE,
-        press_color: Color::BLUE,
+        normal_color: Color::new(96,96,96,255),
+        hover_color: Color::new(128,128,128,255),
+        press_color: Color::new(200,200,200,255),
     };
     let mut gui = OverlayBox::from_iter([
         UINode::Viewport(ViewportNode::new(
@@ -104,7 +104,7 @@ fn main() {
         UINode::AmyGUI(AmyGUINode::PadBox(padding!(5.0, UniformGridNode::from_iter(
             24.0, 24.0,  // item size
             3.0, 3.0,    // gap
-            const { unsafe { NonZeroU32::new_unchecked(2) } }, // columns
+            const { unsafe { NonZeroU32::new_unchecked(3) } }, // columns
             [
                 Button::new(Empty, STYLE),
                 Button::new(Empty, STYLE),
@@ -129,8 +129,8 @@ fn main() {
     let mut layer_tree = LayerTree::new();
 
     {
-        let UINode::Viewport(viewport) = &mut gui.content[0] else { panic!("you forgot to update this") };
         let raster0 = rasters.create_raster(&mut rl, &thread);
+        let UINode::Viewport(viewport) = &mut gui.content[0] else { panic!("you forgot to update this") };
         viewport.brush.set_target(raster0.clone());
         layer_tree.push(Layer::new(LayerContent::new_raster(raster0)));
     }
@@ -154,7 +154,7 @@ fn main() {
         };
         let mut ui_events = Events::check(&mut RaylibInputBackend(&rl));
 
-        // UI must occur first because it appears in front and would consume the events
+        gui.dibs_tick(&mut RaylibTickBackend(&mut rl, &thread), window_rec, &mut ui_events);
         gui.active_tick(&mut RaylibTickBackend(&mut rl, &thread), window_rec, &mut ui_events);
 
         // update layer buffers
