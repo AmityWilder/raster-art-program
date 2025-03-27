@@ -1,8 +1,16 @@
 use crate::*;
 
 pub struct Event<T = ()> {
-    event: Option<T>,
+    pub(crate) event: Option<T>,
 }
+
+impl<T: Clone> Clone for Event<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self { event: self.event.clone() }
+    }
+}
+impl<T: Copy> Copy for Event<T> {}
 
 impl<T> Event<T> {
     fn new(event: Option<T>) -> Self {
@@ -21,11 +29,13 @@ impl<T> Event<T> {
         self.event.take_if(|x| predicate(x))
     }
 
+    /// Same as [`Self::take`], but panics if another UI element has already claimed dibs.
     #[inline]
     pub fn take_with_dibs(&mut self) -> T {
-        self.event.take().expect("only one source should have dibs at a time")
+        self.event.take().expect("only one ui element should have dibs at a time")
     }
 
+    /// Same as [`Self::take_if`], but panics if another UI element has already claimed dibs.
     #[inline]
     pub fn take_with_dibs_if<P: FnOnce(&T) -> bool>(&mut self, predicate: P) -> Option<T> {
         if self.event.as_ref().map_or(false, predicate) {
@@ -44,6 +54,7 @@ impl<T> Event<T> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MouseEvent {
     pub position: Point,
     pub left_mouse_press: Event<()>,
@@ -62,8 +73,9 @@ impl Event<MouseEvent> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Events {
-    pub hover: Event<MouseEvent>,
+    pub mouse_event: Event<MouseEvent>,
     /// left mouse release is not consumable, becasuse everything
     /// should be allowed to reset even if something else "consumed" it
     pub left_mouse_release: bool,
@@ -72,7 +84,7 @@ pub struct Events {
 impl Events {
     pub fn check<IB: InputBackend>(tb: &mut IB) -> Self {
         Self {
-            hover: Event::new(Some(MouseEvent {
+            mouse_event: Event::new(Some(MouseEvent {
                 position: tb.mouse_position(),
                 left_mouse_press: Event::new(tb.is_m1_pressed().then_some(())),
                 scroll: Event::new(Some(tb.mouse_wheel_move())),

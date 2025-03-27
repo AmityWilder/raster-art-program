@@ -4,7 +4,10 @@ use std::num::{NonZeroU16, NonZeroU32};
 use amygui::prelude::*;
 use brush::{AmyBlendModeExt, BlendEquation, BlendFactor, BlendModeA, Brush, BrushPreset, BrushPresetDraw, BrushTargetModeExt};
 use layer::{Canvas, EffectTable, Layer, LayerContent, LayerTree, RasterTable};
+#[cfg(feature = "rl-5_5")]
 use raylib::prelude::*;
+#[cfg(feature = "rl-old")]
+use raylib_old::prelude::*;
 use viewport::ViewportNode;
 
 mod raster;
@@ -106,20 +109,20 @@ fn main() {
             3.0, 3.0,    // gap
             const { unsafe { NonZeroU32::new_unchecked(3) } }, // columns
             [
-                Button::new(Empty, STYLE),
-                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE, |_| {}),
+                Button::new(Empty, STYLE, |_| {}),
 
-                Button::new(Empty, STYLE),
-                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE, |_| {}),
+                Button::new(Empty, STYLE, |_| {}),
 
-                Button::new(Empty, STYLE),
-                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE, |_| {}),
+                Button::new(Empty, STYLE, |_| {}),
 
-                Button::new(Empty, STYLE),
-                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE, |_| {}),
+                Button::new(Empty, STYLE, |_| {}),
 
-                Button::new(Empty, STYLE),
-                Button::new(Empty, STYLE),
+                Button::new(Empty, STYLE, |_| {}),
+                Button::new(Empty, STYLE, |_| {}),
             ],
         )))),
     ]);

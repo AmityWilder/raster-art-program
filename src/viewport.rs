@@ -39,7 +39,7 @@ impl<'a> TickNode<RaylibTickBackend<'a>> for ViewportNode {
         let RaylibTickBackend(rl, thread) = tb;
 
         self.brush_pos_prev = self.brush_pos;
-        if let Some(mut mouse_event) = events.hover.take() {
+        if let Some(mut mouse_event) = events.mouse_event.take() {
             let mouse_pos = Vector2::new(
                 mouse_event.position.x,
                 mouse_event.position.y,

@@ -8,4 +8,10 @@ edition = "2024"
 
 [dependencies]
 amygui = { path = "amygui" }
-raylib = "5.5.0"
+raylib_old = { git = "https://github.com/raylib-rs/raylib-rs.git", version = "5.0.2", optional = true }
+raylib = { git = "https://github.com/raylib-rs/raylib-rs.git", version = "5.5", optional = true }
+
+[features]
+default = ["dep:raylib_old"]
+rl-old = ["dep:raylib_old"]
+rl-5_5 = ["dep:raylib"]

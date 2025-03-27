@@ -6,11 +6,13 @@ pub mod label;
 pub mod option;
 pub mod overlay_box;
 pub mod pad_box;
+pub mod panel;
 pub mod region;
 pub mod size_box;
 pub mod split_box;
 pub mod stack_box;
 pub mod uniform_grid;
+pub mod viewport;
 
 pub(crate) use events::Events;
 
@@ -47,6 +49,7 @@ pub mod prelude {
         button::{
             ButtonStyle,
             ButtonState,
+            ButtonData,
             Button,
         },
         events::{
@@ -80,6 +83,7 @@ pub mod prelude {
             UniformGridLayout,
             UniformGridNode,
         },
+        viewport::Viewport,
     };
 }
 use prelude::*;
@@ -193,6 +197,9 @@ pub trait TickNode<TB>: Node {
     /// Should run before active/inactive tick.
     ///
     /// Nodes with children should always call this recursively.
+    ///
+    /// Only one UI element is permitted to have "dibs" at a time.
+    /// Implementors should use [`Event::take_with_dibs`] to show exclusive dibs to an event.
     #[inline]
     #[allow(unused)]
     fn dibs_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {}
@@ -294,7 +301,7 @@ impl<TB, T: SimpleCollectionNode<Item: TickNode<TB>>> TickNode<TB> for T {
     #[inline]
     fn active_tick(&mut self, tb: &mut TB, slot: Rect, events: &mut Events) {
         for (item, slot) in self.children_mut(slot).rev() {
-            if events.hover.is_some_and_overlapping(slot) {
+            if events.mouse_event.is_some_and_overlapping(slot) {
                 item.active_tick(tb, slot, events);
             } else {
                 item.inactive_tick(tb, slot, events);
@@ -392,11 +399,11 @@ macro_rules! impl_guinode_union {
 
 impl_guinode_union!{
     /// A union of all AmityGUI nodes.
-    pub enum(ColorT: Copy, T) AmyGUINode<ColorT, T> {
+    pub enum(Color: Copy, T, ButtonOnPress) AmyGUINode<Color, T, ButtonOnPress> {
         AlignBox(AlignBoxNode<T>),
         AreaBox(AreaBoxNode<T>),
-        Button(Button<ColorT, T>),
-        Label(Label<ColorT>),
+        Button(Button<Color, T, ButtonOnPress>),
+        Label(Label<Color>),
         PadBox(PadBoxNode<T>),
         SizeBox(SizeBoxNode<T>),
         SplitBox(SplitBoxNode<T>),
@@ -404,7 +411,7 @@ impl_guinode_union!{
         UniformGrid(UniformGridNode<T>),
         Empty(Empty),
     }
-    impl(ColorT: Copy, T: Node) Node;
-    impl(ColorT: Copy, TB, T: TickNode<TB>) Tick<(TB)>;
-    impl(ColorT: Copy, DB: DrawBackend<Color = ColorT>, T: DrawNode<DB>) Draw<(DB)>;
+    impl(Color: Copy, ButtonOnPress, T: Node) Node;
+    impl(Color: Copy, ButtonOnPress: FnMut(&mut ButtonData<Color>), TB, T: TickNode<TB>) Tick<(TB)>;
+    impl(Color: Copy, ButtonOnPress, DB: DrawBackend<Color = Color>, T: DrawNode<DB>) Draw<(DB)>;
 }
